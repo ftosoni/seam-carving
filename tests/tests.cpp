@@ -20,12 +20,13 @@
 // warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 //
 // You should have received a copy of the BSD 3-Clause License along with this
-// program (see the LICENSE file); if not, see
+// program (see the LICENCE file); if not, see
 // <https://opensource.org/license/bsd-3-clause>.
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
 #include "../src/seam_carving.h"
+#include "../src/visualise.h"
 #include <iostream>
 #include <cassert>
 #include <cmath>
@@ -146,6 +147,96 @@ void test_no_luminance() {
     std::cout << "test_no_luminance passed!" << std::endl;
 }
 
+// Test case 7: Grayscale (single-channel) input is supported and stays single-channel
+void test_grayscale() {
+    Image img;
+    img.width = 10;
+    img.height = 10;
+    img.channels = 1;
+    img.data.resize(10 * 10 * 1, 200); // Uniform mid-grey background
+
+    // Add a diagonal dark line so there's an energy gradient to follow
+    for (int i = 0; i < 10; ++i) {
+        img.data[i * 10 + i] = 0;
+    }
+
+    SeamCarving carver(img);
+    carver.resize(8, 7, 2);
+
+    Image result = carver.get_image();
+    assert(result.width == 8);
+    assert(result.height == 7);
+    assert(result.channels == 1);
+    assert(result.data.size() == 8 * 7 * 1);
+    std::cout << "test_grayscale passed!" << std::endl;
+}
+
+// Test case 8: Gray+alpha (two-channel) input is supported and keeps both channels.
+// The energy uses channel 0 (luminance); the alpha channel just rides along the
+// per-pixel strides during carving.
+void test_gray_alpha() {
+    Image img;
+    img.width = 10;
+    img.height = 10;
+    img.channels = 2;
+    img.data.resize(10 * 10 * 2);
+    for (int i = 0; i < 10 * 10; ++i) {
+        img.data[i * 2]     = 200; // grey
+        img.data[i * 2 + 1] = 255; // alpha (fully opaque)
+    }
+
+    // Diagonal dark line in the luminance channel for an energy gradient
+    for (int i = 0; i < 10; ++i) {
+        img.data[(i * 10 + i) * 2] = 0;
+    }
+
+    SeamCarving carver(img);
+    carver.resize(8, 7, 2);
+
+    Image result = carver.get_image();
+    assert(result.width == 8);
+    assert(result.height == 7);
+    assert(result.channels == 2);
+    assert(result.data.size() == 8 * 7 * 2);
+    std::cout << "test_gray_alpha passed!" << std::endl;
+}
+
+// Test case 9: The seam overlay accepts low-channel backgrounds. This exercises
+// the visualisation path that previously assumed >= 3 channels and would read
+// out of bounds on the last pixel of a grayscale/gray+alpha image.
+void test_seam_overlay_low_channels() {
+    const uint8_t seam_rgb[3] = {220, 20, 60};
+    // One straight vertical seam down column 2 (one entry per row).
+    std::vector<std::vector<int>> seams = {{2, 2, 2, 2}};
+
+    for (int ch : {1, 2}) {
+        Image bg;
+        bg.width = 4;
+        bg.height = 4;
+        bg.channels = ch;
+        bg.data.assign(static_cast<size_t>(4 * 4 * ch), 128); // uniform grey
+
+        Image overlay = viz::render_seam_overlay(bg, seams, seam_rgb, false);
+
+        // Output is always RGB regardless of the input channel count.
+        assert(overlay.channels == 3);
+        assert(overlay.data.size() == static_cast<size_t>(4 * 4 * 3));
+
+        // The grey background is replicated across the three channels...
+        const int bg_px = (0 * 4 + 0) * 3; // pixel (0,0), not on the seam
+        assert(overlay.data[bg_px + 0] == 128);
+        assert(overlay.data[bg_px + 1] == 128);
+        assert(overlay.data[bg_px + 2] == 128);
+
+        // ...and the seam pixels carry the seam colour.
+        const int seam_px = (0 * 4 + 2) * 3; // pixel (2,0), on the seam
+        assert(overlay.data[seam_px + 0] == seam_rgb[0]);
+        assert(overlay.data[seam_px + 1] == seam_rgb[1]);
+        assert(overlay.data[seam_px + 2] == seam_rgb[2]);
+    }
+    std::cout << "test_seam_overlay_low_channels passed!" << std::endl;
+}
+
 // Helper to create a larger synthetic 30x30 RGB image
 Image create_larger_synthetic_image() {
     Image img;
@@ -164,7 +255,7 @@ Image create_larger_synthetic_image() {
     return img;
 }
 
-// Test case 7: Verify output is identical across different thread counts
+// Test case 10: Verify output is identical across different thread counts
 void test_parallelism_consistency() {
     Image img = create_larger_synthetic_image();
 
@@ -237,6 +328,9 @@ int main() {
     test_mask_weights();
     test_large_upscaling();
     test_no_luminance();
+    test_grayscale();
+    test_gray_alpha();
+    test_seam_overlay_low_channels();
     test_parallelism_consistency();
     std::cout << "All tests passed successfully!" << std::endl;
     return 0;

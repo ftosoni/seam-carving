@@ -8,18 +8,18 @@
 // warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 //
 // You should have received a copy of the BSD 3-Clause License along with this
-// program (see the LICENSE file); if not, see
+// program (see the LICENCE file); if not, see
 // <https://opensource.org/license/bsd-3-clause>.
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
 // -----------------------------------------------------------------------------
-// Visualisation helpers (implementation). See visualize.h for the rationale and
+// Visualisation helpers (implementation). See visualise.h for the rationale and
 // the public contract. This file owns the colour-map data and the pixel-level
 // rendering; it has no knowledge of how energy maps or seams are computed.
 // -----------------------------------------------------------------------------
 
-#include "visualize.h"
+#include "visualise.h"
 
 #include <algorithm>
 #include <array>
@@ -134,13 +134,19 @@ Image render_seam_overlay(const Image& background,
     out.data.resize(static_cast<size_t>(w) * h * 3);
 
     // Copy the background into a 3-channel image, optionally desaturating it so
-    // the coloured seams stand out. Any alpha channel of the source is dropped.
+    // the coloured seams stand out. Grayscale (1) and gray+alpha (2) sources use
+    // channel 0 as the luminance; any alpha channel of the source is dropped.
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
             const int src = (y * w + x) * bc;
-            const uint8_t r = background.data[src + 0];
-            const uint8_t g = background.data[src + 1];
-            const uint8_t b = background.data[src + 2];
+            uint8_t r, g, b;
+            if (bc >= 3) {
+                r = background.data[src + 0];
+                g = background.data[src + 1];
+                b = background.data[src + 2];
+            } else {
+                r = g = b = background.data[src];
+            }
             const int dst = (y * w + x) * 3;
             if (greyscale_background) {
                 const uint8_t l = luma601(r, g, b);

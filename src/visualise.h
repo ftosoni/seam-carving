@@ -8,13 +8,13 @@
 // warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 //
 // You should have received a copy of the BSD 3-Clause License along with this
-// program (see the LICENSE file); if not, see
+// program (see the LICENCE file); if not, see
 // <https://opensource.org/license/bsd-3-clause>.
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
-#ifndef VISUALIZE_H
-#define VISUALIZE_H
+#ifndef VISUALISE_H
+#define VISUALISE_H
 
 // -----------------------------------------------------------------------------
 // Visualisation helpers for the seam-carving operator.
@@ -60,7 +60,8 @@ Colormap colormap_from_string(const std::string& name, bool* ok = nullptr);
 Image render_scalar_field(const std::vector<double>& field, int width, int height,
                           Colormap cmap);
 
-// Draw the given seams over a copy of `background` (an RGB or RGBA image). Each
+// Draw the given seams over a copy of `background` (1 to 4 channels; grayscale
+// and gray+alpha use channel 0 as the luminance, any alpha is dropped). Each
 // seam is a vector of length background.height giving, for every row, the column
 // to mark; this matches SeamCarving::seams_to_remove. Seams are drawn in
 // `seam_rgb` (the default crimson is 220, 20, 60). When `greyscale_background`
@@ -74,4 +75,4 @@ Image render_seam_overlay(const Image& background,
 
 } // namespace viz
 
-#endif // VISUALIZE_H
+#endif // VISUALISE_H

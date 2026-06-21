@@ -20,7 +20,7 @@
 // warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 //
 // You should have received a copy of the BSD 3-Clause License along with this
-// program (see the LICENSE file); if not, see
+// program (see the LICENCE file); if not, see
 // <https://opensource.org/license/bsd-3-clause>.
 //
 // SPDX-License-Identifier: BSD-3-Clause
@@ -32,7 +32,7 @@
 #include "stb_image_write.h"
 
 #include "seam_carving.h"
-#include "visualize.h"
+#include "visualise.h"
 #include <iostream>
 #include <string>
 #include <vector>
@@ -128,8 +128,8 @@ void print_usage(const char* program_name) {
               << "Visualisation (optional, written from the input before carving):\n"
               << "  --dump-energy <path>  Write the backward energy map as a colour-mapped PNG\n"
               << "  --dump-seams <path>   Write the input with the seams removed to reach -w overlaid\n"
-              << "  --viz-colormap <name> Colour map for --dump-energy: viridis (default), magma, grey\n"
-              << "  --seam-color <r,g,b>  Seam overlay colour (default 220,20,60, crimson)\n"
+              << "  --viz-colourmap <name> Colour map for --dump-energy: viridis (default), magma, grey\n"
+              << "  --seam-colour <r,g,b>  Seam overlay colour (default 220,20,60, crimson)\n"
               << "  --seam-on-gray        Draw seams over a greyscale copy of the input\n";
 }
 
@@ -226,11 +226,11 @@ int main(int argc, char* argv[]) {
             dump_energy_path = args[++i];
         } else if (arg == "--dump-seams" && i + 1 < args.size()) {
             dump_seams_path = args[++i];
-        } else if (arg == "--viz-colormap" && i + 1 < args.size()) {
+        } else if (arg == "--viz-colourmap" && i + 1 < args.size()) {
             viz_colormap_name = args[++i];
-        } else if (arg == "--seam-color" && i + 1 < args.size()) {
+        } else if (arg == "--seam-colour" && i + 1 < args.size()) {
             if (!parse_rgb_triple(args[++i], seam_color)) {
-                std::cerr << "Warning: Could not parse --seam-color '" << args[i]
+                std::cerr << "Warning: Could not parse --seam-colour '" << args[i]
                           << "', expected r,g,b with values 0-255. Using default.\n";
             }
         } else if (arg == "--seam-on-gray") {

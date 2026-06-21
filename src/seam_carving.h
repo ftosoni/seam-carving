@@ -20,7 +20,7 @@
 // warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 //
 // You should have received a copy of the BSD 3-Clause License along with this
-// program (see the LICENSE file); if not, see
+// program (see the LICENCE file); if not, see
 // <https://opensource.org/license/bsd-3-clause>.
 //
 // SPDX-License-Identifier: BSD-3-Clause
@@ -71,7 +71,7 @@ public:
 
     // --- Visualisation support -----------------------------------------------
     // These two methods expose data the operator already computes, so that the
-    // separate visualisation module (visualize.h) can render figures without
+    // separate visualisation module (visualise.h) can render figures without
     // duplicating any carving logic. They are the only additions made to the
     // class for visualisation purposes.
 

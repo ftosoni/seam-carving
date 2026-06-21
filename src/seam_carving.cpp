@@ -20,7 +20,7 @@
 // warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 //
 // You should have received a copy of the BSD 3-Clause License along with this
-// program (see the LICENSE file); if not, see
+// program (see the LICENCE file); if not, see
 // <https://opensource.org/license/bsd-3-clause>.
 //
 // SPDX-License-Identifier: BSD-3-Clause
@@ -70,9 +70,15 @@ namespace {
         int px = (x + width) % width;
         int py = (y + height) % height;
         int idx = (py * width + px) * channels;
-        rgb[0] = data[idx];
-        rgb[1] = data[idx + 1];
-        rgb[2] = data[idx + 2];
+        if (channels >= 3) {
+            rgb[0] = data[idx];
+            rgb[1] = data[idx + 1];
+            rgb[2] = data[idx + 2];
+        } else {
+            // Grayscale (1 channel) or gray+alpha (2): treat channel 0 as the
+            // luminance and replicate it, so every energy formula keeps working.
+            rgb[0] = rgb[1] = rgb[2] = data[idx];
+        }
     }
 
     // Absolute intensity difference between two pixels, used by the forward-energy
@@ -98,8 +104,8 @@ namespace {
 
 SeamCarving::SeamCarving(const Image& image)
     : width_(image.width), height_(image.height), channels_(image.channels), data_(image.data) {
-    if (channels_ < 3) {
-        throw std::runtime_error("Only RGB or RGBA images are supported (must have >= 3 channels).");
+    if (channels_ < 1) {
+        throw std::runtime_error("Image must have at least one channel.");
     }
 }
 
@@ -621,7 +627,7 @@ void SeamCarving::insert_width(int target_width, int num_threads) {
 }
 
 // --- Visualisation support ---------------------------------------------------
-// Thin wrapper exposing the backward energy map for figures (see visualize.h).
+// Thin wrapper exposing the backward energy map for figures (see visualise.h).
 // The map honours use_luminance_ but ignores use_forward_energy_ by design: the
 // energy figure always shows the backward dual-gradient magnitude.
 std::vector<double> SeamCarving::backward_energy_map(int num_threads) {

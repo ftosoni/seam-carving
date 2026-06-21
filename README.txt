@@ -31,7 +31,7 @@ parallelisation.
 Directory layout:
 
     CMakeLists.txt        Build configuration (CMake).
-    LICENSE               BSD 3-Clause license text.
+    LICENCE               BSD 3-Clause license text.
     CITATION.cff          Citation metadata (Citation File Format).
     codemeta.json         Software metadata (CodeMeta schema).
     README.txt            This file.
@@ -43,8 +43,8 @@ Directory layout:
         seam_carving.h    Declaration of the SeamCarving operator class.
         seam_carving.cpp  Core operator: energy, dynamic programming, seam
                           removal/insertion, transpose, masking.
-        visualize.h       Declaration of the visualisation helpers.
-        visualize.cpp     Rendering of the energy map (colour maps) and of the
+        visualise.h       Declaration of the visualisation helpers.
+        visualise.cpp     Rendering of the energy map (colour maps) and of the
                           seam overlays used for the figures.
 
     tests/                Unit tests:
@@ -92,7 +92,7 @@ accompanying IPOL article.
     - Visualisation (the energy and seam figures of the "Examples" section):
           SeamCarving::backward_energy_map and SeamCarving::seams_to_remove
           in src/seam_carving.cpp, rendered by the functions in
-          src/visualize.cpp.
+          src/visualise.cpp.
 
 
 --------------------------------------------------------------------------------
@@ -142,9 +142,9 @@ Visualisation options (written from the input, before carving):
     --dump-energy <path>  Save the backward energy map as a colour-mapped PNG.
     --dump-seams  <path>  Save the input with the seams removed to reach -w
                           overlaid.
-    --viz-colormap <name> Colour map for --dump-energy: viridis (default),
+    --viz-colourmap <name> Colour map for --dump-energy: viridis (default),
                           magma, grey.
-    --seam-color <r,g,b>  Seam overlay colour (default 220,20,60, crimson).
+    --seam-colour <r,g,b> Seam overlay colour (default 220,20,60, crimson).
     --seam-on-gray        Draw the seams over a greyscale copy of the input.
 
 Examples:
@@ -188,7 +188,7 @@ This program is free software: you can redistribute it and/or modify it under
 the terms of the BSD 3-Clause License. This program is distributed in the hope
 that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
 warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the full
-license text in the LICENSE file, or <https://opensource.org/license/bsd-3-clause>.
+license text in the LICENCE file, or <https://opensource.org/license/bsd-3-clause>.
 
 The third-party headers in thirdparty/ (stb_image.h, stb_image_write.h, by
 Sean Barrett) are in the public domain (or MIT, at your option) and are

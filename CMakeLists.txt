@@ -11,8 +11,8 @@ add_executable(seam_carving
     src/main.cpp
     src/seam_carving.cpp
     src/seam_carving.h
-    src/visualize.cpp
-    src/visualize.h
+    src/visualise.cpp
+    src/visualise.h
 )
 
 target_include_directories(seam_carving PRIVATE
@@ -37,6 +37,8 @@ if(BUILD_TESTS)
         tests/tests.cpp
         src/seam_carving.cpp
         src/seam_carving.h
+        src/visualise.cpp
+        src/visualise.h
     )
     target_include_directories(seam_carving_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
