@@ -1,4 +1,4 @@
-// Seam Carving for Content-Aware Image Resizing
+// An Analysis and Implementation of Seam Carving for Content-Aware Image Resizing
 //
 // Copyright (c) 2026 Francesco Tosoni
 //

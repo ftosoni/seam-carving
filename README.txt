@@ -1,9 +1,9 @@
 ================================================================================
-Seam Carving for Content-Aware Image Resizing
+An Analysis and Implementation of Seam Carving for Content-Aware Image Resizing
 ================================================================================
 
 IPOL article:
-    Seam Carving for Content-Aware Image Resizing
+    An Analysis and Implementation of Seam Carving for Content-Aware Image Resizing
     Image Processing On Line (IPOL), http://www.ipol.im/
     (The final article URL and DOI will be assigned upon publication.)
 
@@ -18,7 +18,7 @@ Source repository: https://github.com/ftosoni/seam-carving
 
 
 --------------------------------------------------------------------------------
-1. Description and organization of the files
+1. Description and organisation of the files
 --------------------------------------------------------------------------------
 
 This archive contains a C++17 implementation of the seam carving content-aware

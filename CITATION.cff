@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite both the software and the accompanying article."
-title: "Seam Carving for Content-Aware Image Resizing"
+title: "An Analysis and Implementation of Seam Carving for Content-Aware Image Resizing"
 abstract: >-
   A C++ implementation of the seam carving content-aware image resizing
   operator, following the original formulation of Avidan and Shamir and the
@@ -28,7 +28,7 @@ keywords:
   - object removal
 preferred-citation:
   type: article
-  title: "Seam Carving for Content-Aware Image Resizing"
+  title: "An Analysis and Implementation of Seam Carving for Content-Aware Image Resizing"
   authors:
     - family-names: Tosoni
       given-names: Francesco

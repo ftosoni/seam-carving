@@ -1,7 +1,7 @@
 {
   "@context": "https://doi.org/10.5063/schema/codemeta-2.0",
   "@type": "SoftwareSourceCode",
-  "name": "Seam Carving for Content-Aware Image Resizing",
+  "name": "An Analysis and Implementation of Seam Carving for Content-Aware Image Resizing",
   "description": "A C++ implementation of the seam carving content-aware image resizing operator, following the original formulation of Avidan and Shamir and the forward-energy criterion of Rubinstein, Shamir and Avidan. It supports image reduction, enlargement by ordered seam insertion, multi-pass enlargement, a user-supplied weight mask for object protection and removal, and optional OpenMP parallelisation.",
   "version": "1.0.0",
   "license": "https://spdx.org/licenses/BSD-3-Clause",
