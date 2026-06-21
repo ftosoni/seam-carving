@@ -1,0 +1,9 @@
+build/
+.vscode/
+.idea/
+*.exe
+*.o
+*.obj
+*enlarged*
+*mixed*
+notes

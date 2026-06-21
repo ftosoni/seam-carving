@@ -1,0 +1,58 @@
+{
+  "@context": "https://doi.org/10.5063/schema/codemeta-2.0",
+  "@type": "SoftwareSourceCode",
+  "name": "Seam Carving for Content-Aware Image Resizing",
+  "description": "A C++ implementation of the seam carving content-aware image resizing operator, following the original formulation of Avidan and Shamir and the forward-energy criterion of Rubinstein, Shamir and Avidan. It supports image reduction, enlargement by ordered seam insertion, multi-pass enlargement, a user-supplied weight mask for object protection and removal, and optional OpenMP parallelisation.",
+  "version": "1.0.0",
+  "license": "https://spdx.org/licenses/BSD-3-Clause",
+  "dateCreated": "2026-06-21",
+  "datePublished": "2026-06-21",
+  "codeRepository": "https://github.com/ftosoni/seam-carving",
+  "url": "https://github.com/ftosoni/seam-carving",
+  "programmingLanguage": "C++",
+  "runtimePlatform": "C++17",
+  "operatingSystem": ["Linux", "macOS", "Windows"],
+  "softwareRequirements": [
+    "C++17 compiler",
+    "CMake (>= 3.12)",
+    "OpenMP (optional, for multi-threading)"
+  ],
+  "keywords": [
+    "seam carving",
+    "content-aware image resizing",
+    "image retargeting",
+    "forward energy",
+    "dynamic programming",
+    "object removal"
+  ],
+  "author": [
+    {
+      "@type": "Person",
+      "givenName": "Francesco",
+      "familyName": "Tosoni",
+      "email": "Francesco.Tosoni@santannapisa.it",
+      "affiliation": {
+        "@type": "Organization",
+        "name": "L'EMbeDS, Sant'Anna School of Advanced Studies, Pisa, Italy"
+      }
+    }
+  ],
+  "referencePublication": [
+    {
+      "@type": "ScholarlyArticle",
+      "name": "Seam Carving for Content-Aware Image Resizing",
+      "author": "Shai Avidan and Ariel Shamir",
+      "isPartOf": "ACM Transactions on Graphics (SIGGRAPH)",
+      "datePublished": "2007",
+      "identifier": "https://doi.org/10.1145/1276377.1276390"
+    },
+    {
+      "@type": "ScholarlyArticle",
+      "name": "Improved Seam Carving for Video Retargeting",
+      "author": "Michael Rubinstein, Ariel Shamir and Shai Avidan",
+      "isPartOf": "ACM Transactions on Graphics (SIGGRAPH)",
+      "datePublished": "2008",
+      "identifier": "https://doi.org/10.1145/1360612.1360615"
+    }
+  ]
+}

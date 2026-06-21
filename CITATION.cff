@@ -1,0 +1,38 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite both the software and the accompanying article."
+title: "Seam Carving for Content-Aware Image Resizing"
+abstract: >-
+  A C++ implementation of the seam carving content-aware image resizing
+  operator, following the original formulation of Avidan and Shamir and the
+  forward-energy criterion of Rubinstein, Shamir and Avidan. It supports image
+  reduction, enlargement by ordered seam insertion, multi-pass enlargement, a
+  user-supplied weight mask for object protection and removal, and optional
+  OpenMP parallelisation.
+type: software
+authors:
+  - family-names: Tosoni
+    given-names: Francesco
+    affiliation: "L'EMbeDS, Sant'Anna School of Advanced Studies, Pisa, Italy"
+    email: Francesco.Tosoni@santannapisa.it
+version: 1.0.0
+date-released: "2026-06-21"
+license: BSD-3-Clause
+repository-code: "https://github.com/ftosoni/seam-carving"
+url: "https://github.com/ftosoni/seam-carving"
+keywords:
+  - seam carving
+  - content-aware image resizing
+  - image retargeting
+  - forward energy
+  - dynamic programming
+  - object removal
+preferred-citation:
+  type: article
+  title: "Seam Carving for Content-Aware Image Resizing"
+  authors:
+    - family-names: Tosoni
+      given-names: Francesco
+      affiliation: "L'EMbeDS, Sant'Anna School of Advanced Studies, Pisa, Italy"
+      email: Francesco.Tosoni@santannapisa.it
+  journal: "Image Processing On Line"
+  year: 2026
