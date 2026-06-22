@@ -317,13 +317,11 @@ int main(int argc, char* argv[]) {
                     double g_val = m_data[idx + 1];
                     weight = (g_val - r_val) * 1e6;
                 } else {
-                    // Greyscale mask: bright protects, dark removes, mid-grey is neutral.
+                    // Greyscale mask: map intensity continuously relative to mid-grey (128).
+                    // White (255) protects, black (0) removes, and mid-grey (128) is neutral.
+                    // The scale matches the range of the colour mask difference [-255, 255].
                     double val = m_data[idx];
-                    if (val > 200) {
-                        weight = 1e6; // Protect
-                    } else if (val < 50) {
-                        weight = -1e6; // Remove
-                    }
+                    weight = (val - 128.0) * 2.0 * 1e6;
                 }
                 mask_weights[y * width + x] = weight;
             }
