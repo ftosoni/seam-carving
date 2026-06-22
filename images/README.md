@@ -77,7 +77,7 @@ the defaults; `--forward` selects the forward-energy criterion. The visualisatio
 (`--dump-energy`, `--dump-seams`, `--seam-on-grey`) write their figures from the input
 *before* carving, so the carved output of those runs is incidental and can be discarded.
 
-**Figure 2: energy map and selected seams (`portal_orig.jpg`)**
+**Figure 3: energy map and selected seams (`portal_orig.jpg`)**
 ```sh
 # energy map (viridis) and the 320 seams removed to reach width 640, over greyscale;
 # the carved output portal_scratch.png is unused and may be deleted
@@ -89,20 +89,20 @@ the defaults; `--forward` selects the forward-energy criterion. The visualisatio
     --dump-energy portal_energy_magma.png --viz-colourmap magma
 ```
 
-**Figure 3: content-aware resizing (`portal_orig.jpg`)**
+**Figure 4: content-aware resizing (`portal_orig.jpg`)**
 ```sh
 ../build/seam_carving portal_orig.jpg portal_enlarge_w1280.png -w 1280
 ../build/seam_carving portal_orig.jpg portal_backward_w640.png -w 640
 ../build/seam_carving portal_orig.jpg portal_forward_w640.png  -w 640 --forward
 ```
 
-**Figure 4: backward vs forward energy (`pont_orig.jpg`)**
+**Figure 5: backward vs forward energy (`pont_orig.jpg`)**
 ```sh
 ../build/seam_carving pont_orig.jpg pont_backward_w560.png -w 560
 ../build/seam_carving pont_orig.jpg pont_forward_w560.png  -w 560 --forward
 ```
 
-**Figure 5: seam selection, backward vs forward (`pont_orig.jpg`)**
+**Figure 6: seam selection, backward vs forward (`pont_orig.jpg`)**
 ```sh
 # first 160 seams each criterion would remove (target width 800), over greyscale;
 # the carved outputs are unused figures and may be deleted
@@ -112,7 +112,7 @@ the defaults; `--forward` selects the forward-energy criterion. The visualisatio
     --dump-seams pont_seams_forward.png --seam-on-grey
 ```
 
-**Figure 6: object removal (`birds_orig.png` + `birds_mask.png`)**
+**Figure 7: object removal (`birds_orig.png` + `birds_mask.png`)**
 ```sh
 # carve the width to 700 with the removal mask: the duck is carved away
 ../build/seam_carving birds_orig.png birds_removed_w700.png -w 700 -m birds_mask.png
@@ -120,7 +120,7 @@ the defaults; `--forward` selects the forward-energy criterion. The visualisatio
 ../build/seam_carving birds_removed_w700.png birds_removed_back960.png -w 960
 ```
 
-**Figure 7: protection and simultaneous removal (`aurora_orig.jpg` + `aurora_mask_both.png`)**
+**Figure 8: protection and simultaneous removal (`aurora_orig.jpg` + `aurora_mask_both.png`)**
 ```sh
 # height reduced to 600 WITHOUT a mask: the house is squeezed and distorted
 ../build/seam_carving aurora_orig.jpg aurora_nomask_h600.png -h 600
