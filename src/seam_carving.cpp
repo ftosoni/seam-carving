@@ -104,6 +104,9 @@ namespace {
 
 SeamCarving::SeamCarving(const Image& image)
     : width_(image.width), height_(image.height), channels_(image.channels), data_(image.data) {
+    if (width_ <= 0 || height_ <= 0) {
+        throw std::runtime_error("Image dimensions must be positive.");
+    }
     if (channels_ < 1) {
         throw std::runtime_error("Image must have at least one channel.");
     }
@@ -141,12 +144,12 @@ void SeamCarving::resize(int target_width, int target_height, int num_threads) {
         throw std::runtime_error("Target dimensions must be positive.");
     }
 
-    // Fixed schedule: all width changes first, then all height changes. This is the
+    // Schedule: all width changes first, then all height changes. This is the
     // simple alternative to the optimal interleaving order of horizontal/vertical
     // removals (transport map, Avidan & Shamir 2007, section 4.2), which we do not
     // implement; it is faster and uses less memory at the price of not guaranteeing
-    // the globally optimal order when both dimensions change (manuscript, section
-    // Image Reduction).
+    // the globally optimal order when both dimensions change (IPOL manuscript,
+    // "Image Reduction" section).
 
     // Process width resizing
     if (target_width < width_) {
@@ -173,7 +176,7 @@ void SeamCarving::carve_width(int target_width, int num_threads) {
         std::vector<double> energy = compute_energy_map(num_threads);
         std::vector<int> seam = find_vertical_seam(energy, num_threads);
         remove_vertical_seam(seam, num_threads);
-        carved++;
+        ++carved;
         if (verbose_ && (carved % 10 == 0 || width_ == target_width)) {
             std::cout << "\rProgress: " << carved << "/" << total_seams 
                       << " (" << (carved * 100 / total_seams) << "%)" << std::flush;
@@ -185,7 +188,7 @@ void SeamCarving::carve_width(int target_width, int num_threads) {
 }
 
 // Height reduction reuses the vertical-seam machinery on the transposed image, so a
-// single routine serves both directions (manuscript, section Image Reduction).
+// single routine serves both directions (IPOL manuscript, section "Image Reduction").
 void SeamCarving::carve_height(int target_height, int num_threads) {
     if (height_ <= target_height) return;
 
@@ -209,7 +212,7 @@ void SeamCarving::carve_height(int target_height, int num_threads) {
 // image gradient, estimated by central differences I(.+1) - I(.-1). We use the L2
 // gradient (the paper's e1 is the L1 gradient; both were reported as tested). Only
 // relative energy matters for the minimisation, so the missing 1/2 factor of the
-// central difference is irrelevant (manuscript, Remark in section Energy).
+// central difference is irrelevant (IPOL manuscript, Remark in section "Energy").
 std::vector<double> SeamCarving::compute_energy_map(int num_threads) {
     std::vector<double> energy(width_ * height_);
 
@@ -225,10 +228,10 @@ std::vector<double> SeamCarving::compute_energy_map(int num_threads) {
 
             // Get RGB values of neighbours. Wrapping boundaries are used here:
             // e.g. x - 1 wraps to width_ - 1, and x + 1 wraps to 0.
-            get_pixel_rgb(data_, x - 1, y, width_, height_, channels_, r_left);
-            get_pixel_rgb(data_, x + 1, y, width_, height_, channels_, r_right);
-            get_pixel_rgb(data_, x, y - 1, width_, height_, channels_, r_up);
-            get_pixel_rgb(data_, x, y + 1, width_, height_, channels_, r_down);
+            get_pixel_rgb(data_, x - 1, y, width_, height_, channels_, r_left); // to the left
+            get_pixel_rgb(data_, x + 1, y, width_, height_, channels_, r_right); // to the right
+            get_pixel_rgb(data_, x, y - 1, width_, height_, channels_, r_up); // above
+            get_pixel_rgb(data_, x, y + 1, width_, height_, channels_, r_down); // below
 
             // Compute gradients. If use_luminance_ is enabled, we use perceptual weights (BT.601)
             // to compute luminance gradients (approximating greyscale gradients).
@@ -264,7 +267,7 @@ std::vector<double> SeamCarving::compute_energy_map(int num_threads) {
 // map M top-down, then backtrack the minimum of the last row to recover the seam.
 // The optional mask term is the per-pixel weight P(i,j) of Rubinstein et al. 2008,
 // Eq. (2): it is added to M and realises object protection (large +) / removal
-// (large -) as described in Avidan & Shamir 2007, section 4.6 (manuscript, Masking).
+// (large -) as described in Avidan & Shamir 2007, section 4.6 (IPOL manuscript, "Masking").
 std::vector<int> SeamCarving::find_vertical_seam(const std::vector<double>& energy, int num_threads) {
     // M is the cumulative cost matrix of size width_ * height_
     std::vector<double> M(width_ * height_);
@@ -281,7 +284,7 @@ std::vector<int> SeamCarving::find_vertical_seam(const std::vector<double>& ener
     // inherently serial in y. The inner loop over x is independent and may be run in
     // parallel (use_parallel_dp_), but each row then needs a thread barrier; that
     // barrier costs more than a row's arithmetic, so the serial scan is the default
-    // and is faster even on large images (manuscript, section Parallelisation).
+    // and is faster even on large images (IPOL manuscript, "Parallelisation" section).
     for (int y = 1; y < height_; ++y) {
         #ifdef USE_OPENMP
         #pragma omp parallel for num_threads(num_threads) schedule(static) if(use_parallel_dp_)
@@ -312,7 +315,7 @@ std::vector<int> SeamCarving::find_vertical_seam(const std::vector<double>& ener
 
                 M[y * width_ + x] = std::min({val_l, val_u, val_r}) + mask_w;
             } else {
-                // Classic backward energy (Avidan & Shamir 2007, dynamic program).
+                // Classic backward energy (Avidan & Shamir 2007).
                 // Recurrence: M(y, x) = e(y, x) + min( M(y-1, x-1), M(y-1, x), M(y-1, x+1) )
                 double min_prev = M[(y - 1) * width_ + x];
                 if (x > 0) {
@@ -506,10 +509,10 @@ void SeamCarving::insert_width(int target_width, int num_threads) {
     // the same seam repeatedly and stretch one path; computing the k seams on a
     // shrinking working copy avoids this. Inserting a number of seams comparable to
     // the width is equivalent to uniform scaling, so a large expansion is split into
-    // passes that each insert at most `width_` seams (std::min(K, width_)).
+    // passes that each insert at most 50% of the current width.
     while (width_ < target_width) {
         int K = target_width - width_;
-        int k = std::min(K, width_);
+        int k = std::min(K, std::max(1, width_ / 2)); // insert at most 50% of the current width
 
         // 1. Create a copy of the carver and an index mapping grid.
         // The index_map tracks the original x-coordinate of every pixel as we
@@ -579,13 +582,16 @@ void SeamCarving::insert_width(int target_width, int num_threads) {
         #pragma omp parallel for num_threads(num_threads) schedule(static)
         #endif
         for (int y = 0; y < height_; ++y) {
+            // cols contains the sorted column indices (relative to the original width)
+            // that we need to duplicate for the current row y.
             const auto& cols = row_cols_to_duplicate[y];
-            int src_col = 0;
-            int dst_col = 0;
-            int cols_inserted = 0;
+            
+            int src_col = 0;        // Index scanning columns of the original image (0 to width_ - 1)
+            int dst_col = 0;        // Index writing columns of the new enlarged image (0 to new_width - 1)
+            int cols_inserted = 0;  // Count of seams we have duplicated so far in this row
 
             while (src_col < width_) {
-                // Copy the original pixel data
+                // Step 4.1: Always copy the original pixel from the source to the destination.
                 int src_pixel_idx = (y * width_ + src_col) * channels_;
                 int dst_pixel_idx = (y * new_width + dst_col) * channels_;
                 for (int c = 0; c < channels_; ++c) {
@@ -594,27 +600,32 @@ void SeamCarving::insert_width(int target_width, int num_threads) {
                 if (!mask_weights_.empty()) {
                     new_mask_weights[y * new_width + dst_col] = mask_weights_[y * width_ + src_col];
                 }
-                dst_col++;
+                ++dst_col; // Move the destination pointer forward
 
-                // If this column index is chosen for duplication, insert a new pixel.
-                // The new pixel's value is the average of current pixel and its right/left neighbour.
+                // Step 4.2: Check if the current source column (src_col) matches the next seam column 
+                // we want to duplicate (cols[cols_inserted]).
                 if (cols_inserted < k && cols[cols_inserted] == src_col) {
+                    // Determine which neighbour to average with. We prefer the right neighbour (src_col + 1),
+                    // but if we are at the right edge, we average with the left neighbour (src_col - 1).
                     int next_col = (src_col + 1 < width_) ? (src_col + 1) : (src_col - 1);
-                    if (next_col < 0) next_col = src_col;
+                    if (next_col < 0) next_col = src_col; // Fallback for 1-pixel wide images
 
                     int nbr_pixel_idx = (y * width_ + next_col) * channels_;
                     int dup_pixel_idx = (y * new_width + dst_col) * channels_;
 
+                    // Set the duplicated pixel to the average of the current pixel and its neighbour.
+                    // This smooths out the transition and avoids stark vertical seam replicas.
                     for (int c = 0; c < channels_; ++c) {
                         new_data[dup_pixel_idx + c] = static_cast<uint8_t>((static_cast<int>(data_[src_pixel_idx + c]) + static_cast<int>(data_[nbr_pixel_idx + c])) / 2);
                     }
                     if (!mask_weights_.empty()) {
                         new_mask_weights[y * new_width + dst_col] = (mask_weights_[y * width_ + src_col] + mask_weights_[y * width_ + next_col]) / 2.0;
                     }
-                    dst_col++;
-                    cols_inserted++;
+                    
+                    ++dst_col;         // Move the destination pointer forward again to accommodate the new pixel
+                    ++cols_inserted;   // Advance to the next column to duplicate
                 }
-                src_col++;
+                ++src_col; // Move to the next source column
             }
         }
 
@@ -712,4 +723,10 @@ void SeamCarving::insert_height(int target_height, int num_threads) {
 
     // Transpose back to original orientation
     transpose();
+}
+
+std::vector<std::vector<int>> SeamCarving::seams_to_remove_horizontal(int count, int num_threads) {
+    SeamCarving work(*this);
+    work.transpose();
+    return work.seams_to_remove(count, num_threads);
 }

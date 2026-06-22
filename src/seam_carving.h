@@ -90,6 +90,12 @@ public:
     // overlay the seams on the input image for figures.
     std::vector<std::vector<int>> seams_to_remove(int count, int num_threads);
 
+    // The first `count` horizontal seams that height reduction would remove, in
+    // removal order, each expressed in the coordinate system of the *current*
+    // image (one row per column). The work is done on an internal copy, so the
+    // object itself is left unchanged. Used to overlay the horizontal seams.
+    std::vector<std::vector<int>> seams_to_remove_horizontal(int count, int num_threads);
+
 private:
     // Carve width (reduces width using vertical seams)
     void carve_width(int target_width, int num_threads);

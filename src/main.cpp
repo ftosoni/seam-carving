@@ -362,15 +362,24 @@ int main(int argc, char* argv[]) {
         }
     }
     if (!dump_seams_path.empty()) {
-        int count = width - target_width;
-        if (count <= 0) {
-            std::cerr << "Warning: --dump-seams needs a target width (-w) smaller than the input "
-                      << "width; skipping the seam overlay.\n";
+        int v_count = width - target_width;
+        int h_count = height - target_height;
+        if (v_count <= 0 && h_count <= 0) {
+            std::cerr << "Warning: --dump-seams needs a target width (-w) or height (-h) smaller than the input "
+                      << "dimensions; skipping the seam overlay.\n";
         } else {
-            std::vector<std::vector<int>> seams = carver.seams_to_remove(count, num_threads);
-            Image seams_img = viz::render_seam_overlay(input_image, seams, seam_color, seam_on_gray);
+            std::vector<std::vector<int>> v_seams;
+            std::vector<std::vector<int>> h_seams;
+            if (v_count > 0) {
+                v_seams = carver.seams_to_remove(v_count, num_threads);
+            }
+            if (h_count > 0) {
+                h_seams = carver.seams_to_remove_horizontal(h_count, num_threads);
+            }
+            Image seams_img = viz::render_seam_overlay(input_image, v_seams, h_seams, seam_color, seam_on_gray);
             if (write_png_utf8(dump_seams_path, seams_img)) {
-                std::cout << "Wrote seam overlay (" << seams.size() << " seams) to: "
+                std::cout << "Wrote seam overlay (" << v_seams.size() << " vertical, "
+                          << h_seams.size() << " horizontal seams) to: "
                           << dump_seams_path << "\n";
             }
         }

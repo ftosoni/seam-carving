@@ -216,7 +216,7 @@ void test_seam_overlay_low_channels() {
         bg.channels = ch;
         bg.data.assign(static_cast<size_t>(4 * 4 * ch), 128); // uniform grey
 
-        Image overlay = viz::render_seam_overlay(bg, seams, seam_rgb, false);
+        Image overlay = viz::render_seam_overlay(bg, seams, {}, seam_rgb, false);
 
         // Output is always RGB regardless of the input channel count.
         assert(overlay.channels == 3);
@@ -320,8 +320,106 @@ void test_parallelism_consistency() {
     std::cout << "test_parallelism_consistency passed!" << std::endl;
 }
 
+void test_enlargement_beyond_50_percent() {
+    Image img = create_synthetic_image();
+    SeamCarving carver(img);
+
+    // Enlarge by 80% (from 10 to 18) in both directions, triggering multi-pass enlargement
+    carver.resize(18, 18, 2);
+
+    Image result = carver.get_image();
+    assert(result.width == 18);
+    assert(result.height == 18);
+    assert(result.channels == 3);
+    assert(result.data.size() == 18 * 18 * 3);
+    std::cout << "test_enlargement_beyond_50_percent passed!" << std::endl;
+}
+
+void test_edge_cases() {
+    // 1. Test 1x1 image enlargement
+    Image img1x1;
+    img1x1.width = 1;
+    img1x1.height = 1;
+    img1x1.channels = 3;
+    img1x1.data = {100, 150, 200};
+
+    SeamCarving carver1(img1x1);
+    carver1.resize(3, 3, 1);
+    Image res3x3 = carver1.get_image();
+    assert(res3x3.width == 3);
+    assert(res3x3.height == 3);
+    assert(res3x3.channels == 3);
+    assert(res3x3.data.size() == 3 * 3 * 3);
+
+    // 2. Test invalid constructor inputs (0x0 or negative dimensions)
+    Image img0x0;
+    img0x0.width = 0;
+    img0x0.height = 0;
+    img0x0.channels = 3;
+    img0x0.data = {};
+    bool threw_0x0 = false;
+    try {
+        SeamCarving carver0(img0x0);
+    } catch (const std::exception& e) {
+        threw_0x0 = true;
+    }
+    assert(threw_0x0);
+
+    Image img_neg;
+    img_neg.width = -5;
+    img_neg.height = 5;
+    img_neg.channels = 3;
+    img_neg.data = {};
+    bool threw_neg = false;
+    try {
+        SeamCarving carver_neg(img_neg);
+    } catch (const std::exception& e) {
+        threw_neg = true;
+    }
+    assert(threw_neg);
+
+    // 3. Test invalid target dimensions for resize (<= 0)
+    SeamCarving carver_invalid_target(img1x1);
+    bool threw_invalid_target = false;
+    try {
+        carver_invalid_target.resize(0, 3, 1);
+    } catch (const std::exception& e) {
+        threw_invalid_target = true;
+    }
+    assert(threw_invalid_target);
+
+    std::cout << "test_edge_cases passed!" << std::endl;
+}
+
+void test_horizontal_seam_visualisation() {
+    Image img = create_synthetic_image();
+    SeamCarving carver(img);
+
+    std::vector<std::vector<int>> h_seams = carver.seams_to_remove_horizontal(2, 1);
+    assert(h_seams.size() == 2);
+    for (const auto& seam : h_seams) {
+        assert(seam.size() == 10);
+        for (int val : seam) {
+            assert(val >= 0 && val < 10);
+        }
+    }
+
+    uint8_t seam_rgb[3] = {255, 0, 0};
+    std::vector<std::vector<int>> v_seams = carver.seams_to_remove(2, 1);
+    Image overlay = viz::render_seam_overlay(img, v_seams, h_seams, seam_rgb, false);
+    assert(overlay.width == 10);
+    assert(overlay.height == 10);
+    assert(overlay.channels == 3);
+    assert(overlay.data.size() == 10 * 10 * 3);
+
+    std::cout << "test_horizontal_seam_visualisation passed!" << std::endl;
+}
+
 int main() {
     std::cout << "Running seam carving tests..." << std::endl;
+    test_horizontal_seam_visualisation();
+    test_edge_cases();
+    test_enlargement_beyond_50_percent();
     test_shrinking();
     test_enlarging();
     test_forward_energy();

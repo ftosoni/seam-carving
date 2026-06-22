@@ -120,7 +120,8 @@ Image render_scalar_field(const std::vector<double>& field, int width, int heigh
 }
 
 Image render_seam_overlay(const Image& background,
-                          const std::vector<std::vector<int>>& seams,
+                          const std::vector<std::vector<int>>& vertical_seams,
+                          const std::vector<std::vector<int>>& horizontal_seams,
                           const uint8_t seam_rgb[3],
                           bool greyscale_background) {
     const int w = background.width;
@@ -161,9 +162,8 @@ Image render_seam_overlay(const Image& background,
         }
     }
 
-    // Paint the seams. Each seam holds one column per row; bounds are checked
-    // defensively so an out-of-range column is simply skipped.
-    for (const auto& seam : seams) {
+    // Paint vertical seams. Each seam holds one column coordinate x per row y.
+    for (const auto& seam : vertical_seams) {
         const int rows = std::min<int>(static_cast<int>(seam.size()), h);
         for (int y = 0; y < rows; ++y) {
             const int x = seam[y];
@@ -174,6 +174,20 @@ Image render_seam_overlay(const Image& background,
             out.data[dst + 2] = seam_rgb[2];
         }
     }
+
+    // Paint horizontal seams. Each seam holds one row coordinate y per column x.
+    for (const auto& seam : horizontal_seams) {
+        const int cols = std::min<int>(static_cast<int>(seam.size()), w);
+        for (int x = 0; x < cols; ++x) {
+            const int y = seam[x];
+            if (y < 0 || y >= h) continue;
+            const int dst = (y * w + x) * 3;
+            out.data[dst + 0] = seam_rgb[0];
+            out.data[dst + 1] = seam_rgb[1];
+            out.data[dst + 2] = seam_rgb[2];
+        }
+    }
+
     return out;
 }
 

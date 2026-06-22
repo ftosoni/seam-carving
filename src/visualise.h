@@ -61,15 +61,17 @@ Image render_scalar_field(const std::vector<double>& field, int width, int heigh
                           Colormap cmap);
 
 // Draw the given seams over a copy of `background` (1 to 4 channels; grayscale
-// and gray+alpha use channel 0 as the luminance, any alpha is dropped). Each
-// seam is a vector of length background.height giving, for every row, the column
-// to mark; this matches SeamCarving::seams_to_remove. Seams are drawn in
-// `seam_rgb` (the default crimson is 220, 20, 60). When `greyscale_background`
-// is true the image is first converted to BT.601 luminance (replicated across
-// channels) so the coloured seams stand out more strongly; otherwise the
-// original colours are preserved. The returned image always has three channels.
+// and gray+alpha use channel 0 as the luminance, any alpha is dropped). The
+// vertical_seams and horizontal_seams parameters hold the list of seams to paint.
+// Each vertical seam is a vector of length background.height (giving the column
+// coordinate x for every row y). Each horizontal seam is a vector of length
+// background.width (giving the row coordinate y for every column x).
+// Seams are drawn in `seam_rgb` (the default crimson is 220, 20, 60). When
+// `greyscale_background` is true the image is first converted to BT.601 luminance
+// so the coloured seams stand out more strongly.
 Image render_seam_overlay(const Image& background,
-                          const std::vector<std::vector<int>>& seams,
+                          const std::vector<std::vector<int>>& vertical_seams,
+                          const std::vector<std::vector<int>>& horizontal_seams,
                           const uint8_t seam_rgb[3],
                           bool greyscale_background);
 

@@ -55,8 +55,8 @@ The tool interprets masks in two ways:
 
 | File | Type | Applies to | Role |
 |------|------|-----------|------|
-| `aurora_mask_both2.png` | colour | `aurora_orig.jpg` | green = protect the house, red = remove a patch of aurora |
-| `aurora_mask_gray.png`  | greyscale | `aurora_orig.jpg` | greyscale equivalent of `aurora_mask_both2.png` |
+| `aurora_mask_both.png` | colour | `aurora_orig.jpg` | green = protect the house, red = remove a patch of aurora |
+| `aurora_mask_gray.png`  | greyscale | `aurora_orig.jpg` | greyscale equivalent of `aurora_mask_both.png` |
 | `birds_mask.png`        | colour | `birds_orig.png`  | red = remove the duck on the right |
 | `birds_mask_gray.png`   | greyscale | `birds_orig.png`  | greyscale equivalent of `birds_mask.png` |
 
@@ -117,12 +117,12 @@ the defaults; `--forward` selects the forward-energy criterion. The visualisatio
 ../build/seam_carving birds_removed_w700.png birds_removed_back960.png -w 960
 ```
 
-**Figure 7: protection and simultaneous removal (`aurora_orig.jpg` + `aurora_mask_both2.png`)**
+**Figure 7: protection and simultaneous removal (`aurora_orig.jpg` + `aurora_mask_both.png`)**
 ```sh
 # height reduced to 600 WITHOUT a mask: the house is squeezed and distorted
 ../build/seam_carving aurora_orig.jpg aurora_nomask_h600.png -h 600
 # same reduction WITH the mask: the house is protected, the aurora patch is removed
-../build/seam_carving aurora_orig.jpg aurora_both_h600.png  -h 600 -m aurora_mask_both2.png
+../build/seam_carving aurora_orig.jpg aurora_both_h600.png  -h 600 -m aurora_mask_both.png
 ```
 
 The greyscale masks are drop-in replacements, e.g. `-m aurora_mask_gray.png` or
