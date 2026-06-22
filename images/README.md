@@ -74,7 +74,7 @@ Build the tool first (see the top-level [`README.txt`](../README.txt)); the bina
 then at `../build/seam_carving` (append `.exe` on Windows). The commands below are run
 from inside this `images/` folder. Backward energy and BT.601-luminance gradients are
 the defaults; `--forward` selects the forward-energy criterion. The visualisation flags
-(`--dump-energy`, `--dump-seams`, `--seam-on-gray`) write their figures from the input
+(`--dump-energy`, `--dump-seams`, `--seam-on-grey`) write their figures from the input
 *before* carving, so the carved output of those runs is incidental and can be discarded.
 
 **Figure 2: energy map and selected seams (`portal_orig.jpg`)**
@@ -83,7 +83,10 @@ the defaults; `--forward` selects the forward-energy criterion. The visualisatio
 # the carved output portal_scratch.png is unused and may be deleted
 ../build/seam_carving portal_orig.jpg portal_scratch.png -w 640 \
     --dump-energy portal_energy.png \
-    --dump-seams  portal_seams.png --seam-on-gray
+    --dump-seams  portal_seams.png --seam-on-grey
+# the same energy map rendered with the magma colour map (middle panel)
+../build/seam_carving portal_orig.jpg portal_scratch.png -w 640 \
+    --dump-energy portal_energy_magma.png --viz-colourmap magma
 ```
 
 **Figure 3: content-aware resizing (`portal_orig.jpg`)**
@@ -104,9 +107,9 @@ the defaults; `--forward` selects the forward-energy criterion. The visualisatio
 # first 160 seams each criterion would remove (target width 800), over greyscale;
 # the carved outputs are unused figures and may be deleted
 ../build/seam_carving pont_orig.jpg pont_scratch_back.png -w 800 \
-    --dump-seams pont_seams_backward.png --seam-on-gray
+    --dump-seams pont_seams_backward.png --seam-on-grey
 ../build/seam_carving pont_orig.jpg pont_scratch_fwd.png  -w 800 --forward \
-    --dump-seams pont_seams_forward.png --seam-on-gray
+    --dump-seams pont_seams_forward.png --seam-on-grey
 ```
 
 **Figure 6: object removal (`birds_orig.png` + `birds_mask.png`)**
