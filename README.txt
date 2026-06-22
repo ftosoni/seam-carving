@@ -145,7 +145,7 @@ Visualisation options (written from the input, before carving):
     --viz-colourmap <name> Colour map for --dump-energy: viridis (default),
                           magma, grey.
     --seam-colour <r,g,b> Seam overlay colour (default 220,20,60, crimson).
-    --seam-on-gray        Draw the seams over a greyscale copy of the input.
+    --seam-on-grey        Draw the seams over a greyscale copy of the input.
 
 Examples:
 
@@ -164,7 +164,7 @@ Examples:
 
     (e) Reproduce the energy and seam figures of the first example:
         ./build/seam_carving images/portal_orig.jpg out.png -w 640 \
-            --dump-energy energy.png --dump-seams seams.png --seam-on-gray
+            --dump-energy energy.png --dump-seams seams.png --seam-on-grey
 
 
 --------------------------------------------------------------------------------

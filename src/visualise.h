@@ -46,11 +46,11 @@ namespace viz {
 // default. The colour data are sampled from matplotlib's maps, which are in the
 // public domain (CC0), so they can be redistributed without licensing concerns.
 // Grey is a plain linear intensity ramp.
-enum class Colormap { Viridis, Magma, Grey };
+enum class Colourmap { Viridis, Magma, Grey };
 
 // Parse a colour-map name ("viridis", "magma", "grey"/"gray"). On an unknown
-// name, returns Colormap::Viridis and sets *ok (if non-null) to false.
-Colormap colormap_from_string(const std::string& name, bool* ok = nullptr);
+// name, returns Colourmap::Viridis and sets *ok (if non-null) to false.
+Colourmap colourmap_from_string(const std::string& name, bool* ok = nullptr);
 
 // Render a scalar field of size width*height (row-major) as an RGB Image. The
 // field is linearly normalised from its [min, max] range to [0, 1] and then
@@ -58,10 +58,10 @@ Colormap colormap_from_string(const std::string& name, bool* ok = nullptr);
 // low end of the map. This min-max normalisation is faithful and reproducible,
 // at the cost that a few very high-energy pixels can compress the mid-tones.
 Image render_scalar_field(const std::vector<double>& field, int width, int height,
-                          Colormap cmap);
+                          Colourmap cmap);
 
-// Draw the given seams over a copy of `background` (1 to 4 channels; grayscale
-// and gray+alpha use channel 0 as the luminance, any alpha is dropped). The
+// Draw the given seams over a copy of `background` (1 to 4 channels; greyscale
+// and grey+alpha use channel 0 as the luminance, any alpha is dropped). The
 // vertical_seams and horizontal_seams parameters hold the list of seams to paint.
 // Each vertical seam is a vector of length background.height (giving the column
 // coordinate x for every row y). Each horizontal seam is a vector of length

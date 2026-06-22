@@ -74,17 +74,17 @@ inline uint8_t luma601(uint8_t r, uint8_t g, uint8_t b) {
 
 } // namespace
 
-Colormap colormap_from_string(const std::string& name, bool* ok) {
+Colourmap colourmap_from_string(const std::string& name, bool* ok) {
     if (ok) *ok = true;
-    if (name == "viridis") return Colormap::Viridis;
-    if (name == "magma") return Colormap::Magma;
-    if (name == "grey" || name == "gray") return Colormap::Grey;
+    if (name == "viridis") return Colourmap::Viridis;
+    if (name == "magma") return Colourmap::Magma;
+    if (name == "grey" || name == "gray") return Colourmap::Grey;
     if (ok) *ok = false;
-    return Colormap::Viridis;
+    return Colourmap::Viridis;
 }
 
 Image render_scalar_field(const std::vector<double>& field, int width, int height,
-                          Colormap cmap) {
+                          Colourmap cmap) {
     Image out;
     out.width = width;
     out.height = height;
@@ -104,9 +104,9 @@ Image render_scalar_field(const std::vector<double>& field, int width, int heigh
         const double t = (field[i] - lo) / range;
         Anchor rgb{};
         switch (cmap) {
-            case Colormap::Viridis: rgb = sample_map(kViridis, t); break;
-            case Colormap::Magma:   rgb = sample_map(kMagma, t);   break;
-            case Colormap::Grey: {
+            case Colourmap::Viridis: rgb = sample_map(kViridis, t); break;
+            case Colourmap::Magma:   rgb = sample_map(kMagma, t);   break;
+            case Colourmap::Grey: {
                 const uint8_t g = static_cast<uint8_t>(std::lround(std::clamp(t, 0.0, 1.0) * 255.0));
                 rgb = {g, g, g};
                 break;
@@ -135,7 +135,7 @@ Image render_seam_overlay(const Image& background,
     out.data.resize(static_cast<size_t>(w) * h * 3);
 
     // Copy the background into a 3-channel image, optionally desaturating it so
-    // the coloured seams stand out. Grayscale (1) and gray+alpha (2) sources use
+    // the coloured seams stand out. Greyscale (1) and grey+alpha (2) sources use
     // channel 0 as the luminance; any alpha channel of the source is dropped.
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {

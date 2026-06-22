@@ -147,8 +147,8 @@ void test_no_luminance() {
     std::cout << "test_no_luminance passed!" << std::endl;
 }
 
-// Test case 7: Grayscale (single-channel) input is supported and stays single-channel
-void test_grayscale() {
+// Test case 7: Greyscale (single-channel) input is supported and stays single-channel
+void test_greyscale() {
     Image img;
     img.width = 10;
     img.height = 10;
@@ -168,13 +168,13 @@ void test_grayscale() {
     assert(result.height == 7);
     assert(result.channels == 1);
     assert(result.data.size() == 8 * 7 * 1);
-    std::cout << "test_grayscale passed!" << std::endl;
+    std::cout << "test_greyscale passed!" << std::endl;
 }
 
-// Test case 8: Gray+alpha (two-channel) input is supported and keeps both channels.
+// Test case 8: Grey+alpha (two-channel) input is supported and keeps both channels.
 // The energy uses channel 0 (luminance); the alpha channel just rides along the
 // per-pixel strides during carving.
-void test_gray_alpha() {
+void test_grey_alpha() {
     Image img;
     img.width = 10;
     img.height = 10;
@@ -198,12 +198,12 @@ void test_gray_alpha() {
     assert(result.height == 7);
     assert(result.channels == 2);
     assert(result.data.size() == 8 * 7 * 2);
-    std::cout << "test_gray_alpha passed!" << std::endl;
+    std::cout << "test_grey_alpha passed!" << std::endl;
 }
 
 // Test case 9: The seam overlay accepts low-channel backgrounds. This exercises
 // the visualisation path that previously assumed >= 3 channels and would read
-// out of bounds on the last pixel of a grayscale/gray+alpha image.
+// out of bounds on the last pixel of a greyscale/grey+alpha image.
 void test_seam_overlay_low_channels() {
     const uint8_t seam_rgb[3] = {220, 20, 60};
     // One straight vertical seam down column 2 (one entry per row).
@@ -415,30 +415,30 @@ void test_horizontal_seam_visualisation() {
     std::cout << "test_horizontal_seam_visualisation passed!" << std::endl;
 }
 
-void test_colormaps() {
-    // 1. Test parsing of colormap strings
+void test_colourmaps() {
+    // 1. Test parsing of colourmap strings
     bool ok = false;
-    viz::Colormap cmap_v = viz::colormap_from_string("viridis", &ok);
-    assert(ok && cmap_v == viz::Colormap::Viridis);
+    viz::Colourmap cmap_v = viz::colourmap_from_string("viridis", &ok);
+    assert(ok && cmap_v == viz::Colourmap::Viridis);
 
-    viz::Colormap cmap_m = viz::colormap_from_string("magma", &ok);
-    assert(ok && cmap_m == viz::Colormap::Magma);
+    viz::Colourmap cmap_m = viz::colourmap_from_string("magma", &ok);
+    assert(ok && cmap_m == viz::Colourmap::Magma);
 
-    viz::Colormap cmap_g = viz::colormap_from_string("grey", &ok);
-    assert(ok && cmap_g == viz::Colormap::Grey);
+    viz::Colourmap cmap_g = viz::colourmap_from_string("grey", &ok);
+    assert(ok && cmap_g == viz::Colourmap::Grey);
 
-    viz::Colormap cmap_g2 = viz::colormap_from_string("gray", &ok);
-    assert(ok && cmap_g2 == viz::Colormap::Grey);
+    viz::Colourmap cmap_g2 = viz::colourmap_from_string("gray", &ok);
+    assert(ok && cmap_g2 == viz::Colourmap::Grey);
 
-    viz::Colormap cmap_invalid = viz::colormap_from_string("invalid_colormap", &ok);
-    assert(!ok && cmap_invalid == viz::Colormap::Viridis);
+    viz::Colourmap cmap_invalid = viz::colourmap_from_string("invalid_colormap", &ok);
+    assert(!ok && cmap_invalid == viz::Colourmap::Viridis);
 
-    // 2. Test rendering scalar field with each colormap
+    // 2. Test rendering scalar field with each colourmap
     std::vector<double> field = {0.0, 0.25, 0.5, 0.75, 1.0, 2.0};
     int w = 3;
     int h = 2;
 
-    for (viz::Colormap cmap : {viz::Colormap::Viridis, viz::Colormap::Magma, viz::Colormap::Grey}) {
+    for (viz::Colourmap cmap : {viz::Colourmap::Viridis, viz::Colourmap::Magma, viz::Colourmap::Grey}) {
         Image img = viz::render_scalar_field(field, w, h, cmap);
         assert(img.width == w);
         assert(img.height == h);
@@ -446,12 +446,12 @@ void test_colormaps() {
         assert(img.data.size() == static_cast<size_t>(w * h * 3));
     }
 
-    std::cout << "test_colormaps passed!" << std::endl;
+    std::cout << "test_colourmaps passed!" << std::endl;
 }
 
 int main() {
     std::cout << "Running seam carving tests..." << std::endl;
-    test_colormaps();
+    test_colourmaps();
     test_horizontal_seam_visualisation();
     test_edge_cases();
     test_enlargement_beyond_50_percent();
@@ -461,8 +461,8 @@ int main() {
     test_mask_weights();
     test_large_upscaling();
     test_no_luminance();
-    test_grayscale();
-    test_gray_alpha();
+    test_greyscale();
+    test_grey_alpha();
     test_seam_overlay_low_channels();
     test_parallelism_consistency();
     std::cout << "All tests passed successfully!" << std::endl;

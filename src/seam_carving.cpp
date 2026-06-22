@@ -75,7 +75,7 @@ namespace {
             rgb[1] = data[idx + 1];
             rgb[2] = data[idx + 2];
         } else {
-            // Grayscale (1 channel) or gray+alpha (2): treat channel 0 as the
+            // Greyscale (1 channel) or grey+alpha (2): treat channel 0 as the
             // luminance and replicate it, so every energy formula keeps working.
             rgb[0] = rgb[1] = rgb[2] = data[idx];
         }

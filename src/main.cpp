@@ -130,7 +130,7 @@ void print_usage(const char* program_name) {
               << "  --dump-seams <path>   Write the input with the seams removed to reach -w overlaid\n"
               << "  --viz-colourmap <name> Colour map for --dump-energy: viridis (default), magma, grey\n"
               << "  --seam-colour <r,g,b>  Seam overlay colour (default 220,20,60, crimson)\n"
-              << "  --seam-on-gray        Draw seams over a greyscale copy of the input\n";
+              << "  --seam-on-grey        Draw seams over a greyscale copy of the input\n";
 }
 
 std::string get_default_output_path(const std::string& input_path) {
@@ -202,9 +202,9 @@ int main(int argc, char* argv[]) {
     // Visualisation options (all optional; empty dump paths mean "do not dump").
     std::string dump_energy_path = "";
     std::string dump_seams_path = "";
-    std::string viz_colormap_name = "viridis";
-    uint8_t seam_color[3] = {220, 20, 60}; // crimson by default
-    bool seam_on_gray = false;
+    std::string viz_colourmap_name = "viridis";
+    uint8_t seam_colour[3] = {220, 20, 60}; // crimson by default
+    bool seam_on_grey = false;
 
     for (size_t i = arg_start_idx; i < args.size(); ++i) {
         std::string arg = args[i];
@@ -227,14 +227,14 @@ int main(int argc, char* argv[]) {
         } else if (arg == "--dump-seams" && i + 1 < args.size()) {
             dump_seams_path = args[++i];
         } else if (arg == "--viz-colourmap" && i + 1 < args.size()) {
-            viz_colormap_name = args[++i];
+            viz_colourmap_name = args[++i];
         } else if (arg == "--seam-colour" && i + 1 < args.size()) {
-            if (!parse_rgb_triple(args[++i], seam_color)) {
+            if (!parse_rgb_triple(args[++i], seam_colour)) {
                 std::cerr << "Warning: Could not parse --seam-colour '" << args[i]
                           << "', expected r,g,b with values 0-255. Using default.\n";
             }
-        } else if (arg == "--seam-on-gray") {
-            seam_on_gray = true;
+        } else if (arg == "--seam-on-grey") {
+            seam_on_grey = true;
         } else {
             std::cerr << "Warning: Unknown option or missing value: " << arg << "\n";
         }
@@ -348,9 +348,9 @@ int main(int argc, char* argv[]) {
     // works on an internal copy, so neither call disturbs the resize below.
     if (!dump_energy_path.empty()) {
         bool ok = true;
-        viz::Colormap cmap = viz::colormap_from_string(viz_colormap_name, &ok);
+        viz::Colourmap cmap = viz::colourmap_from_string(viz_colourmap_name, &ok);
         if (!ok) {
-            std::cerr << "Warning: Unknown colour map '" << viz_colormap_name
+            std::cerr << "Warning: Unknown colour map '" << viz_colourmap_name
                       << "', falling back to viridis.\n";
         }
         std::vector<double> energy = carver.backward_energy_map(num_threads);
@@ -374,7 +374,7 @@ int main(int argc, char* argv[]) {
             if (h_count > 0) {
                 h_seams = carver.seams_to_remove_horizontal(h_count, num_threads);
             }
-            Image seams_img = viz::render_seam_overlay(input_image, v_seams, h_seams, seam_color, seam_on_gray);
+            Image seams_img = viz::render_seam_overlay(input_image, v_seams, h_seams, seam_colour, seam_on_grey);
             if (write_png_utf8(dump_seams_path, seams_img)) {
                 std::cout << "Wrote seam overlay (" << v_seams.size() << " vertical, "
                           << h_seams.size() << " horizontal seams) to: "
