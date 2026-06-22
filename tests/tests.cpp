@@ -415,8 +415,43 @@ void test_horizontal_seam_visualisation() {
     std::cout << "test_horizontal_seam_visualisation passed!" << std::endl;
 }
 
+void test_colormaps() {
+    // 1. Test parsing of colormap strings
+    bool ok = false;
+    viz::Colormap cmap_v = viz::colormap_from_string("viridis", &ok);
+    assert(ok && cmap_v == viz::Colormap::Viridis);
+
+    viz::Colormap cmap_m = viz::colormap_from_string("magma", &ok);
+    assert(ok && cmap_m == viz::Colormap::Magma);
+
+    viz::Colormap cmap_g = viz::colormap_from_string("grey", &ok);
+    assert(ok && cmap_g == viz::Colormap::Grey);
+
+    viz::Colormap cmap_g2 = viz::colormap_from_string("gray", &ok);
+    assert(ok && cmap_g2 == viz::Colormap::Grey);
+
+    viz::Colormap cmap_invalid = viz::colormap_from_string("invalid_colormap", &ok);
+    assert(!ok && cmap_invalid == viz::Colormap::Viridis);
+
+    // 2. Test rendering scalar field with each colormap
+    std::vector<double> field = {0.0, 0.25, 0.5, 0.75, 1.0, 2.0};
+    int w = 3;
+    int h = 2;
+
+    for (viz::Colormap cmap : {viz::Colormap::Viridis, viz::Colormap::Magma, viz::Colormap::Grey}) {
+        Image img = viz::render_scalar_field(field, w, h, cmap);
+        assert(img.width == w);
+        assert(img.height == h);
+        assert(img.channels == 3);
+        assert(img.data.size() == static_cast<size_t>(w * h * 3));
+    }
+
+    std::cout << "test_colormaps passed!" << std::endl;
+}
+
 int main() {
     std::cout << "Running seam carving tests..." << std::endl;
+    test_colormaps();
     test_horizontal_seam_visualisation();
     test_edge_cases();
     test_enlargement_beyond_50_percent();
