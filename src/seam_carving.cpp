@@ -36,7 +36,11 @@
 //       Avidan & Shamir, "Seam Carving for Content-Aware Image Resizing",
 //       ACM SIGGRAPH 2007 (energy functions: section 3.2). The paper's e1 is the
 //       L1 gradient; both L1 and L2 were reported as tested. We use the L2
-//       gradient by default (computed on BT.601 luminance unless disabled).
+//       gradient by default and offer L1 as an option (computed on BT.601
+//       luminance unless disabled).
+//       Two further energy functions of the same section are available: e_HoG
+//       (gradient divided by the local histogram-of-gradients maximum) and
+//       e_Entropy (gradient plus local entropy).
 //   * Forward energy: the criterion of
 //       Rubinstein, Shamir & Avidan, "Improved Seam Carving for Video
 //       Retargeting", ACM SIGGRAPH 2008 (section 5.1, Eq. (2)), which charges
@@ -83,8 +87,9 @@ namespace {
 
     // Absolute intensity difference between two pixels, used by the forward-energy
     // costs (Rubinstein et al. 2008, section 5.1): luminance difference in luma mode,
-    // or the L2 norm of the RGB difference otherwise. Boundaries wrap (see above).
-    inline double get_pixel_diff(const std::vector<uint8_t>& data, int x1, int y1, int x2, int y2, int width, int height, int channels, bool use_luminance) {
+    // or the L2 (or, with use_l1, L1) norm of the RGB difference otherwise.
+    // Boundaries wrap (see above).
+    inline double get_pixel_diff(const std::vector<uint8_t>& data, int x1, int y1, int x2, int y2, int width, int height, int channels, bool use_luminance, bool use_l1) {
         double rgb1[3], rgb2[3];
         get_pixel_rgb(data, x1, y1, width, height, channels, rgb1);
         get_pixel_rgb(data, x2, y2, width, height, channels, rgb2);
@@ -97,9 +102,67 @@ namespace {
             double dr = rgb1[0] - rgb2[0];
             double dg = rgb1[1] - rgb2[1];
             double db = rgb1[2] - rgb2[2];
+            if (use_l1) {
+                return std::abs(dr) + std::abs(dg) + std::abs(db);
+            }
             return std::sqrt(dr * dr + dg * dg + db * db);
         }
     }
+
+    // Periodic index: maps any integer a to [0, n), consistently with the
+    // wrap-around boundaries used everywhere else (also for |a| > n, which occurs
+    // when a local window is wider than the image).
+    inline int wrap(int a, int n) {
+        int r = a % n;
+        return (r < 0) ? r + n : r;
+    }
+
+    // BT.601 luminance plane of the image (size width*height, row-major).
+    std::vector<double> luminance_plane(const std::vector<uint8_t>& data, int width, int height, int channels) {
+        std::vector<double> lum(static_cast<size_t>(width) * height);
+        double rgb[3];
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+                get_pixel_rgb(data, x, y, width, height, channels, rgb);
+                lum[y * width + x] = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2];
+            }
+        }
+        return lum;
+    }
+
+    // Sweep a (2r+1)x(2r+1) window along row y, left to right, with periodic
+    // boundaries. Instead of rebuilding the window statistic at every pixel (cost
+    // (2r+1)^2), the window is updated incrementally: moving from x-1 to x removes
+    // the leftmost column and adds a new rightmost one (cost 2(2r+1)).
+    //   update(px, py, sign): add (sign = +1) or remove (sign = -1) pixel (px, py);
+    //   emit(x):              called once the window centred on (x, y) is complete.
+    template <class Update, class Emit>
+    void slide_window_along_row(int y, int r, int width, int height, Update update, Emit emit) {
+        auto column = [&](int cx, int sign) {
+            const int px = wrap(cx, width);
+            for (int dy = -r; dy <= r; ++dy) {
+                update(px, wrap(y + dy, height), sign);
+            }
+        };
+        for (int dx = -r; dx <= r; ++dx) column(dx, +1);
+        emit(0);
+        for (int x = 1; x < width; ++x) {
+            column(x - r - 1, -1);
+            column(x + r, +1);
+            emit(x);
+        }
+    }
+
+    // Parameters of the energy functions of Avidan & Shamir 2007, section 3.2.
+    constexpr int kHogRadius = 5;       // 11x11 window
+    constexpr int kHogBins = 8;         // 8-bin orientation histogram
+    constexpr double kHogEpsilon = 1.0; // guards the division in perfectly flat windows
+    constexpr int kEntropyRadius = 4;   // 9x9 window
+    // The paper adds the entropy (in bits, at most log2(81) ~ 6.3 here) to e1
+    // without stating the intensity scale. We take intensities in [0, 1], the
+    // usual convention: our gradient is computed on [0, 255], so the entropy is
+    // multiplied by 255, i.e. e_Entropy = 255 * (e / 255 + H).
+    constexpr double kEntropyWeight = 255.0;
 }
 
 SeamCarving::SeamCarving(const Image& image)
@@ -131,6 +194,18 @@ void SeamCarving::set_luminance_energy(bool enable) {
     use_luminance_ = enable;
 }
 
+void SeamCarving::set_energy_function(EnergyFunction function) {
+    energy_function_ = function;
+}
+
+void SeamCarving::set_gradient_norm(GradientNorm norm) {
+    gradient_norm_ = norm;
+}
+
+void SeamCarving::set_height_first(bool enable) {
+    height_first_ = enable;
+}
+
 void SeamCarving::set_verbose(bool enable) {
     verbose_ = enable;
 }
@@ -144,28 +219,39 @@ void SeamCarving::resize(int target_width, int target_height, int num_threads) {
         throw std::runtime_error("Target dimensions must be positive.");
     }
 
-    // Schedule: all width changes first, then all height changes. This is the
-    // simple alternative to the optimal interleaving order of horizontal/vertical
-    // removals (transport map, Avidan & Shamir 2007, section 4.2), which we do not
-    // implement; it is faster and uses less memory at the price of not guaranteeing
-    // the globally optimal order when both dimensions change (IPOL manuscript,
-    // "Image Reduction" section).
+    // Schedule: all width changes first, then all height changes (or the reverse
+    // with set_height_first). This is the simple alternative to the optimal
+    // interleaving order of horizontal/vertical removals (transport map, Avidan &
+    // Shamir 2007, section 4.2), which we do not implement; it is faster and uses
+    // less memory at the price of not guaranteeing the globally optimal order when
+    // both dimensions change (IPOL manuscript, "Image Reduction" section).
+    auto resize_width = [&]() {
+        if (target_width < width_) {
+            carve_width(target_width, num_threads);
+        } else if (target_width > width_) {
+            insert_width(target_width, num_threads);
+        }
+    };
+    auto resize_height = [&]() {
+        if (target_height < height_) {
+            carve_height(target_height, num_threads);
+        } else if (target_height > height_) {
+            insert_height(target_height, num_threads);
+        }
+    };
 
-    // Process width resizing
-    if (target_width < width_) {
-        carve_width(target_width, num_threads);
-    } else if (target_width > width_) {
-        insert_width(target_width, num_threads);
-    }
-
-    // Process height resizing
-    if (target_height < height_) {
-        carve_height(target_height, num_threads);
-    } else if (target_height > height_) {
-        insert_height(target_height, num_threads);
+    if (height_first_) {
+        resize_height();
+        resize_width();
+    } else {
+        resize_width();
+        resize_height();
     }
 }
 
+// Implements Algorithm 1 (width reduction by seam removal), lines 1-7, of the IPOL
+// article: line 2 is compute_energy_map, lines 3-5 are find_vertical_seam and
+// line 6 is remove_vertical_seam.
 void SeamCarving::carve_width(int target_width, int num_threads) {
     int total_seams = width_ - target_width;
     int carved = 0;
@@ -188,7 +274,8 @@ void SeamCarving::carve_width(int target_width, int num_threads) {
 }
 
 // Height reduction reuses the vertical-seam machinery on the transposed image, so a
-// single routine serves both directions (IPOL manuscript, section "Image Reduction").
+// single routine serves both directions (IPOL manuscript, section "Image Reduction"):
+// Algorithm 1 applied to the transpose.
 void SeamCarving::carve_height(int target_height, int num_threads) {
     if (height_ <= target_height) return;
 
@@ -213,6 +300,8 @@ void SeamCarving::carve_height(int target_height, int num_threads) {
 // gradient (the paper's e1 is the L1 gradient; both were reported as tested). Only
 // relative energy matters for the minimisation, so the missing 1/2 factor of the
 // central difference is irrelevant (IPOL manuscript, Remark in section "Energy").
+// Implements line 2 of Algorithm 1 and Equations (3)-(5) of the IPOL article
+// (Equations (6) and (7) for the alternative energy functions, see below).
 std::vector<double> SeamCarving::compute_energy_map(int num_threads) {
     std::vector<double> energy(width_ * height_);
 
@@ -244,11 +333,19 @@ std::vector<double> SeamCarving::compute_energy_map(int num_threads) {
             double gy = r_down[1] - r_up[1];
             double by = r_down[2] - r_up[2];
 
+            // L2 (default): Equation (3) of the IPOL article; L1: the e1 of the
+            // original paper, Equation (2). In RGB mode the L1 norm sums the absolute
+            // differences of all channels and both directions.
             double val = 0.0;
+            const bool l1 = (gradient_norm_ == GradientNorm::L1);
             if (use_luminance_) {
                 double gx_luma = 0.299 * rx + 0.587 * gx + 0.114 * bx;
                 double gy_luma = 0.299 * ry + 0.587 * gy + 0.114 * by;
-                val = std::sqrt(gx_luma * gx_luma + gy_luma * gy_luma);
+                val = l1 ? std::abs(gx_luma) + std::abs(gy_luma)
+                         : std::sqrt(gx_luma * gx_luma + gy_luma * gy_luma);
+            } else if (l1) {
+                val = std::abs(rx) + std::abs(gx) + std::abs(bx)
+                    + std::abs(ry) + std::abs(gy) + std::abs(by);
             } else {
                 double delta_x_sq = rx * rx + gx * gx + bx * bx;
                 double delta_y_sq = ry * ry + gy * gy + by * by;
@@ -260,7 +357,107 @@ std::vector<double> SeamCarving::compute_energy_map(int num_threads) {
         }
     }
 
+    // Optional local modulation of the gradient magnitude (section 3.2).
+    if (energy_function_ == EnergyFunction::HoG) {
+        apply_hog(energy, num_threads);
+    } else if (energy_function_ == EnergyFunction::Entropy) {
+        add_entropy(energy, num_threads);
+    }
+
     return energy;
+}
+
+// e_HoG = e / max(HoG) (Avidan & Shamir 2007, section 3.2). HoG(i,j) is an 8-bin
+// histogram of oriented gradients over the 11x11 window centred on the pixel. As
+// in Dalal & Triggs (2005), each pixel votes in the bin of its unsigned gradient
+// orientation in [0, pi) with a weight equal to its gradient magnitude; the
+// gradient is the central difference of the luminance, as for e. Dividing by the
+// strongest orientation of the neighbourhood makes pixels near strong edges cheap
+// (attracting seams to them), while the numerator keeps the seam from crossing the
+// edge, so that seams tend to run parallel to it. Implements Equation (6) of the
+// IPOL article.
+void SeamCarving::apply_hog(std::vector<double>& energy, int num_threads) const {
+    const std::vector<double> lum = luminance_plane(data_, width_, height_, channels_);
+
+    // Per-pixel gradient magnitude and orientation bin.
+    std::vector<double> magnitude(lum.size());
+    std::vector<int> bin(lum.size());
+    const double kPi = std::acos(-1.0);
+    #ifdef USE_OPENMP
+    #pragma omp parallel for num_threads(num_threads) schedule(static)
+    #endif
+    for (int y = 0; y < height_; ++y) {
+        for (int x = 0; x < width_; ++x) {
+            const double gx = lum[y * width_ + wrap(x + 1, width_)] - lum[y * width_ + wrap(x - 1, width_)];
+            const double gy = lum[wrap(y + 1, height_) * width_ + x] - lum[wrap(y - 1, height_) * width_ + x];
+            // Unsigned orientation in [0, pi): opposite gradients (theta and theta + pi)
+            // describe the same edge direction and share a bin.
+            double theta = std::atan2(gy, gx);       // (-pi, pi]
+            if (theta < 0.0) theta += kPi;
+            if (theta >= kPi) theta -= kPi;
+            int b = static_cast<int>(theta / kPi * kHogBins);
+            magnitude[y * width_ + x] = (gradient_norm_ == GradientNorm::L1)
+                                            ? std::abs(gx) + std::abs(gy)
+                                            : std::sqrt(gx * gx + gy * gy);
+            bin[y * width_ + x] = std::min(b, kHogBins - 1);  // guards against rounding
+        }
+    }
+
+    // Sliding-window histogram along each row; rows are independent.
+    #ifdef USE_OPENMP
+    #pragma omp parallel for num_threads(num_threads) schedule(static)
+    #endif
+    for (int y = 0; y < height_; ++y) {
+        double hist[kHogBins] = {0.0};
+        slide_window_along_row(y, kHogRadius, width_, height_,
+            [&](int px, int py, int sign) {
+                const int i = py * width_ + px;
+                hist[bin[i]] += sign * magnitude[i];
+            },
+            [&](int x) {
+                const double hog_max = *std::max_element(hist, hist + kHogBins);
+                energy[y * width_ + x] /= std::max(hog_max, kHogEpsilon);
+            });
+    }
+}
+
+// e_Entropy = e + H (Avidan & Shamir 2007, section 3.2), H being the Shannon
+// entropy (in bits) of the 8-bit luminance values in the 9x9 window centred on
+// the pixel: H = log2(N) - (1/N) sum_v c_v log2 c_v, with c_v the number of window
+// pixels of value v and N = 81. Textured regions have high entropy and are
+// protected; uniform ones have zero entropy. The sum is updated incrementally as
+// the window slides, using a table of c log2 c. See kEntropyWeight for the scale.
+// Implements Equation (7) of the IPOL article.
+void SeamCarving::add_entropy(std::vector<double>& energy, int num_threads) const {
+    const std::vector<double> lum = luminance_plane(data_, width_, height_, channels_);
+    std::vector<uint8_t> level(lum.size());
+    for (size_t i = 0; i < lum.size(); ++i) {
+        level[i] = static_cast<uint8_t>(std::lround(std::clamp(lum[i], 0.0, 255.0)));
+    }
+
+    const int n = (2 * kEntropyRadius + 1) * (2 * kEntropyRadius + 1);
+    std::vector<double> c_log_c(n + 1, 0.0);  // c * log2(c), with 0 log 0 = 0
+    for (int c = 1; c <= n; ++c) c_log_c[c] = c * std::log2(static_cast<double>(c));
+    const double log2_n = std::log2(static_cast<double>(n));
+
+    #ifdef USE_OPENMP
+    #pragma omp parallel for num_threads(num_threads) schedule(static)
+    #endif
+    for (int y = 0; y < height_; ++y) {
+        int count[256] = {0};
+        double sum_c_log_c = 0.0;
+        slide_window_along_row(y, kEntropyRadius, width_, height_,
+            [&](int px, int py, int sign) {
+                int& c = count[level[py * width_ + px]];
+                sum_c_log_c -= c_log_c[c];
+                c += sign;
+                sum_c_log_c += c_log_c[c];
+            },
+            [&](int x) {
+                const double entropy = std::max(0.0, log2_n - sum_c_log_c / n);
+                energy[y * width_ + x] += kEntropyWeight * entropy;
+            });
+    }
 }
 
 // Optimal seam by dynamic programming (Cormen et al.). We build the cumulative cost
@@ -268,6 +465,9 @@ std::vector<double> SeamCarving::compute_energy_map(int num_threads) {
 // The optional mask term is the per-pixel weight P(i,j) of Rubinstein et al. 2008,
 // Eq. (2): it is added to M and realises object protection (large +) / removal
 // (large -) as described in Avidan & Shamir 2007, section 4.6 (IPOL manuscript, "Masking").
+// Implements lines 3-5 of Algorithm 1 of the IPOL article: the cumulative cost map of
+// Equation (9) (backward) or Equation (11) (forward, with the step costs of
+// Equation (10)), its minimum in the last row, and the backtracking.
 std::vector<int> SeamCarving::find_vertical_seam(const std::vector<double>& energy, int num_threads) {
     // M is the cumulative cost matrix of size width_ * height_
     std::vector<double> M(width_ * height_);
@@ -304,9 +504,9 @@ std::vector<int> SeamCarving::find_vertical_seam(const std::vector<double>& ener
                 //      c_l = c_u + |I(x, y-1) - I(x-1, y)|                   (their C_L)
                 // c_r: c_u + new vertical edge when stepping from the right diagonal:
                 //      c_r = c_u + |I(x, y-1) - I(x+1, y)|                   (their C_R)
-                double c_u = get_pixel_diff(data_, x + 1, y, x - 1, y, width_, height_, channels_, use_luminance_);
-                double c_l = c_u + get_pixel_diff(data_, x, y - 1, x - 1, y, width_, height_, channels_, use_luminance_);
-                double c_r = c_u + get_pixel_diff(data_, x, y - 1, x + 1, y, width_, height_, channels_, use_luminance_);
+                double c_u = get_pixel_diff(data_, x + 1, y, x - 1, y, width_, height_, channels_, use_luminance_, gradient_norm_ == GradientNorm::L1);
+                double c_l = c_u + get_pixel_diff(data_, x, y - 1, x - 1, y, width_, height_, channels_, use_luminance_, gradient_norm_ == GradientNorm::L1);
+                double c_r = c_u + get_pixel_diff(data_, x, y - 1, x + 1, y, width_, height_, channels_, use_luminance_, gradient_norm_ == GradientNorm::L1);
 
                 // Recurrence: M(y, x) = min( M(y-1, x-1) + c_l, M(y-1, x) + c_u, M(y-1, x+1) + c_r )
                 double val_l = (x > 0) ? (M[(y - 1) * width_ + (x - 1)] + c_l) : 1e30;
@@ -355,9 +555,9 @@ std::vector<int> SeamCarving::find_vertical_seam(const std::vector<double>& ener
         if (use_forward_energy_) {
             // Recompute the forward step costs at (y+1, prev_x) so the descent uses
             // exactly the same costs that built M (Rubinstein et al. 2008, Eq. (2)).
-            double c_u = get_pixel_diff(data_, prev_x + 1, y + 1, prev_x - 1, y + 1, width_, height_, channels_, use_luminance_);
-            double c_l = c_u + get_pixel_diff(data_, prev_x, y, prev_x - 1, y + 1, width_, height_, channels_, use_luminance_);
-            double c_r = c_u + get_pixel_diff(data_, prev_x, y, prev_x + 1, y + 1, width_, height_, channels_, use_luminance_);
+            double c_u = get_pixel_diff(data_, prev_x + 1, y + 1, prev_x - 1, y + 1, width_, height_, channels_, use_luminance_, gradient_norm_ == GradientNorm::L1);
+            double c_l = c_u + get_pixel_diff(data_, prev_x, y, prev_x - 1, y + 1, width_, height_, channels_, use_luminance_, gradient_norm_ == GradientNorm::L1);
+            double c_r = c_u + get_pixel_diff(data_, prev_x, y, prev_x + 1, y + 1, width_, height_, channels_, use_luminance_, gradient_norm_ == GradientNorm::L1);
 
             // The straight (vertical) predecessor also pays the c_u edge cost in the
             // forward recurrence, so add it to the running best before comparing it
@@ -405,6 +605,7 @@ std::vector<int> SeamCarving::find_vertical_seam(const std::vector<double>& ener
 // Rebuild the image one column narrower by dropping the seam pixel in each row (and the
 // matching mask entry, so the mask stays aligned with the image across iterations).
 // Rows are independent, so this is parallelised and is O(n*m) per seam.
+// Implements line 6 of Algorithm 1 of the IPOL article.
 void SeamCarving::remove_vertical_seam(const std::vector<int>& seam, int num_threads) {
     int new_width = width_ - 1;
     std::vector<uint8_t> new_data(new_width * height_ * channels_);
@@ -496,6 +697,9 @@ void SeamCarving::transpose() {
     }
 }
 
+// Implements Algorithm 2 (one enlargement pass), lines 1-8, of the IPOL article,
+// repeated in passes of at most 50% of the current width (section "Image
+// Enlargement"): step 1 below is line 1, step 2 lines 2-5, steps 3-4 lines 6-8.
 void SeamCarving::insert_width(int target_width, int num_threads) {
     if (width_ >= target_width) return;
 
@@ -607,6 +811,9 @@ void SeamCarving::insert_width(int target_width, int num_threads) {
                 if (cols_inserted < k && cols[cols_inserted] == src_col) {
                     // Determine which neighbour to average with. We prefer the right neighbour (src_col + 1),
                     // but if we are at the right edge, we average with the left neighbour (src_col - 1).
+                    // This is the one-sided rule of Avidan & Shamir 2007, section 5 (multi-size
+                    // images); their section 4.3 averages with both neighbours instead and also
+                    // modifies the seam pixel (IPOL manuscript, section "Image Enlargement").
                     int next_col = (src_col + 1 < width_) ? (src_col + 1) : (src_col - 1);
                     if (next_col < 0) next_col = src_col; // Fallback for 1-pixel wide images
 

@@ -49,4 +49,8 @@ if(BUILD_TESTS)
         target_compile_definitions(seam_carving_tests PRIVATE USE_OPENMP)
     endif()
     add_test(NAME SeamCarvingTests COMMAND seam_carving_tests)
+
+    # Command-line tests (tests/cli_tests.cmake): the program options, run on
+    # the bundled images.
+    include(tests/cli_tests.cmake)
 endif()

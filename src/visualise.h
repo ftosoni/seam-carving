@@ -2,6 +2,19 @@
 //
 // Copyright (c) 2026 Francesco Tosoni
 //
+// This file is part of a program implementing an algorithm possibly linked to the
+// patent US 7,747,107 B2 ("Method for retargeting images", S. Avidan and A. Shamir,
+// Mitsubishi Electric Research Laboratories). This file is made available for the
+// exclusive aim of serving as scientific tool to verify the soundness and
+// completeness of the algorithm description. Compilation, execution and
+// redistribution of this file may violate patents rights in certain countries.
+// The situation being different for every country and changing over time, it is
+// your responsibility to determine which patent rights restrictions apply to you
+// before you compile, use, modify, or redistribute this file. A patent lawyer is
+// qualified to make this determination. If and only if they don't conflict with
+// any patent terms, you can benefit from the following license terms attached to
+// this file.
+//
 // This program is free software: you can redistribute it and/or modify it under
 // the terms of the BSD 3-Clause License. This program is distributed in the hope
 // that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
@@ -27,11 +40,13 @@
 //
 //   * an energy map rendered through a perceptually-uniform colour map
 //     (render_scalar_field), and
-//   * the input image with the seams to be removed drawn on top
-//     (render_seam_overlay).
+//   * the input image with the seams to be removed drawn on top, either in a
+//     single colour (render_seam_overlay) or coloured by removal order
+//     (render_seam_overlay_by_order).
 //
-// Everything is configurable by the caller (colour map, seam colour, greyscale
-// background); see the command-line flags in main.cpp for the user-facing knobs.
+// Everything is configurable by the caller (colour map, clipping percentile, seam
+// colour, greyscale background); see the command-line flags in main.cpp for the
+// user-facing knobs.
 // -----------------------------------------------------------------------------
 
 #include "seam_carving.h"
@@ -52,13 +67,20 @@ enum class Colourmap { Viridis, Magma, Grey };
 // name, returns Colourmap::Viridis and sets *ok (if non-null) to false.
 Colourmap colourmap_from_string(const std::string& name, bool* ok = nullptr);
 
+// Default upper clipping percentile used when rendering energy maps (see below).
+constexpr double kDefaultClipPercentile = 99.0;
+
 // Render a scalar field of size width*height (row-major) as an RGB Image. The
-// field is linearly normalised from its [min, max] range to [0, 1] and then
-// mapped through the chosen colour map. A flat field (max == min) maps to the
-// low end of the map. This min-max normalisation is faithful and reproducible,
-// at the cost that a few very high-energy pixels can compress the mid-tones.
+// field is linearly normalised from [min, q] to [0, 1], where q is the
+// `clip_percentile`-th percentile of the field, and then mapped through the
+// chosen colour map; values above q saturate at the top of the map. Energy maps
+// are heavy-tailed: a few very strong edges would otherwise stretch the range
+// and compress all intermediate values into the dark end of the map. With
+// clip_percentile = 100 the plain min-max normalisation is obtained. A flat
+// field (q == min) maps to the low end of the map.
 Image render_scalar_field(const std::vector<double>& field, int width, int height,
-                          Colourmap cmap);
+                          Colourmap cmap,
+                          double clip_percentile = kDefaultClipPercentile);
 
 // Draw the given seams over a copy of `background` (1 to 4 channels; greyscale
 // and grey+alpha use channel 0 as the luminance, any alpha is dropped). The
@@ -74,6 +96,20 @@ Image render_seam_overlay(const Image& background,
                           const std::vector<std::vector<int>>& horizontal_seams,
                           const uint8_t seam_rgb[3],
                           bool greyscale_background);
+
+// Same as render_seam_overlay, but each seam is coloured by its removal order
+// through the colour map `cmap` (as in Avidan & Shamir 2007, Figure 13), so the
+// figure shows *when* each seam is removed, not only where. The seams are
+// numbered in the order the operator removes them: all vertical seams first, in
+// the given order, then all horizontal seams (the width-then-height schedule of
+// SeamCarving::resize). Seam k of a total of K is drawn with the colour at
+// t = k / (K - 1): the first seam removed takes the low end of the map, the last
+// one the high end.
+Image render_seam_overlay_by_order(const Image& background,
+                                   const std::vector<std::vector<int>>& vertical_seams,
+                                   const std::vector<std::vector<int>>& horizontal_seams,
+                                   Colourmap cmap,
+                                   bool greyscale_background);
 
 } // namespace viz
 

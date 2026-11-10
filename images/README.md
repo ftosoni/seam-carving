@@ -47,11 +47,19 @@ same dimensions as the image it is applied to.
 
 The tool interprets masks in two ways:
 
-- **Colour mask:** the per-pixel weight is proportional to the difference `G − R`
-  between the green and red channels: **green protects** (positive weight, seams avoid
-  the region) and **red removes** (negative weight, seams are attracted there first).
-- **Greyscale mask:** sufficiently **bright** pixels protect, sufficiently **dark**
-  pixels are removed, and intermediate grey leaves the cost unchanged.
+- **Colour mask:** the per-pixel weight is `P = 10⁶ · (G − R)`, proportional to the
+  difference between the green and red channels: **green protects** (positive weight,
+  seams avoid the region) and **red removes** (negative weight, seams are attracted there
+  first). Pixels with `G = R` (black, white, any grey) are neutral.
+- **Greyscale mask:** the weight is `P = 10⁶ · 2 · (V − 128)`, a continuous map of the
+  grey level `V`: brighter than mid-grey protects, darker removes, and **only `V = 128`
+  is neutral**.
+
+Because of the `10⁶` factor, even a one-level deviation from neutral outweighs the
+energy of a whole seam, so every non-neutral pixel acts as a **strong constraint**, not
+as a graded weight. When drawing a mask, leave the unmarked area exactly neutral (black
+or grey in a colour mask, exactly `128` in a greyscale mask) and save it as PNG:
+anti-aliased edges or JPEG artefacts would mark extra pixels.
 
 | File | Type | Applies to | Role |
 |------|------|-----------|------|
@@ -76,43 +84,63 @@ from inside this `images/` folder. Backward energy and BT.601-luminance gradient
 the defaults; `--forward` selects the forward-energy criterion. The visualisation flags
 (`--dump-energy`, `--dump-seams`, `--seam-on-grey`) write their figures from the input
 *before* carving, so the carved output of those runs is incidental and can be discarded.
+`--seam-on-grey` draws the seams over a greyscale copy of the input with its grey levels
+compressed into [80, 176], so that both the dark and the light seam colours stand out.
 
 **Figure 3: energy map and selected seams (`portal_orig.jpg`)**
 ```sh
-# energy map (viridis) and the 320 seams removed to reach width 640, over greyscale;
+# (a) energy map (viridis) with plain min-max normalisation
+../build/seam_carving portal_orig.jpg portal_scratch.png -w 640 \
+    --dump-energy portal_energy_minmax.png --viz-clip 100
+# (b) the same map clipped at the default 99th percentile, and (c) the 320 seams
+# removed to reach width 640, coloured by removal order, over greyscale;
 # the carved output portal_scratch.png is unused and may be deleted
 ../build/seam_carving portal_orig.jpg portal_scratch.png -w 640 \
     --dump-energy portal_energy.png \
-    --dump-seams  portal_seams.png --seam-on-grey
-# the same energy map rendered with the magma colour map (middle panel)
-../build/seam_carving portal_orig.jpg portal_scratch.png -w 640 \
-    --dump-energy portal_energy_magma.png --viz-colourmap magma
+    --dump-seams  portal_seams.png --seam-order viridis --seam-on-grey
 ```
 
-**Figure 4: content-aware resizing (`portal_orig.jpg`)**
+**Figure 4: content-aware width reduction (`portal_orig.jpg`)**
 ```sh
-../build/seam_carving portal_orig.jpg portal_enlarge_w1280.png -w 1280
 ../build/seam_carving portal_orig.jpg portal_backward_w640.png -w 640
 ../build/seam_carving portal_orig.jpg portal_forward_w640.png  -w 640 --forward
 ```
 
-**Figure 5: backward vs forward energy (`pont_orig.jpg`)**
+**Figure 5: content-aware width enlargement (`portal_orig.jpg`)**
+```sh
+../build/seam_carving portal_orig.jpg portal_enlarge_w1280.png         -w 1280
+../build/seam_carving portal_orig.jpg portal_enlarge_forward_w1280.png -w 1280 --forward
+```
+
+**Figure 6: backward vs forward energy (`pont_orig.jpg`)**
 ```sh
 ../build/seam_carving pont_orig.jpg pont_backward_w560.png -w 560
 ../build/seam_carving pont_orig.jpg pont_forward_w560.png  -w 560 --forward
 ```
 
-**Figure 6: seam selection, backward vs forward (`pont_orig.jpg`)**
+**Figure 7: seam selection, backward vs forward (`pont_orig.jpg`)**
 ```sh
-# first 160 seams each criterion would remove (target width 800), over greyscale;
-# the carved outputs are unused figures and may be deleted
+# first 160 seams each criterion would remove (target width 800), coloured by
+# removal order, over greyscale; the carved outputs are unused and may be deleted
 ../build/seam_carving pont_orig.jpg pont_scratch_back.png -w 800 \
-    --dump-seams pont_seams_backward.png --seam-on-grey
+    --dump-seams pont_seams_backward.png --seam-order viridis --seam-on-grey
 ../build/seam_carving pont_orig.jpg pont_scratch_fwd.png  -w 800 --forward \
-    --dump-seams pont_seams_forward.png --seam-on-grey
+    --dump-seams pont_seams_forward.png --seam-order viridis --seam-on-grey
 ```
 
-**Figure 7: object removal (`birds_orig.png` + `birds_mask.png`)**
+**Figure 8: backward energy functions (`pont_orig.jpg`)**
+```sh
+# energy maps (top row) and width reduced to 560 (bottom row) with the gradient,
+# HoG and entropy energies; the gradient result equals pont_backward_w560.png
+../build/seam_carving pont_orig.jpg pont_backward_w560.png -w 560 \
+    --dump-energy pont_energy_gradient.png
+../build/seam_carving pont_orig.jpg pont_hog_w560.png      -w 560 --energy hog \
+    --dump-energy pont_energy_hog.png
+../build/seam_carving pont_orig.jpg pont_entropy_w560.png  -w 560 --energy entropy \
+    --dump-energy pont_energy_entropy.png
+```
+
+**Figure 9: object removal (`birds_orig.png` + `birds_mask.png`)**
 ```sh
 # carve the width to 700 with the removal mask: the duck is carved away
 ../build/seam_carving birds_orig.png birds_removed_w700.png -w 700 -m birds_mask.png
@@ -120,7 +148,7 @@ the defaults; `--forward` selects the forward-energy criterion. The visualisatio
 ../build/seam_carving birds_removed_w700.png birds_removed_back960.png -w 960
 ```
 
-**Figure 8: protection and simultaneous removal (`aurora_orig.jpg` + `aurora_mask_both.png`)**
+**Figure 10: protection and simultaneous removal (`aurora_orig.jpg` + `aurora_mask_both.png`)**
 ```sh
 # height reduced to 600 WITHOUT a mask: the house is squeezed and distorted
 ../build/seam_carving aurora_orig.jpg aurora_nomask_h600.png -h 600

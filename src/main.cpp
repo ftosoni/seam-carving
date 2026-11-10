@@ -40,6 +40,7 @@
 #include <thread>
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 
 #ifdef USE_OPENMP
 #include <omp.h>
@@ -114,14 +115,44 @@ bool parse_rgb_triple(const std::string& text, uint8_t out[3]) {
     return true;
 }
 
+// Parse a strictly positive real number. Returns false on malformed input or on
+// a value <= 0, leaving *out unchanged.
+bool parse_positive_double(const std::string& text, double* out) {
+    try {
+        size_t used = 0;
+        double v = std::stod(text, &used);
+        if (used != text.size() || !(v > 0.0) || !std::isfinite(v)) return false;
+        *out = v;
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+// Convert a relative target size (ratio of the input size) to pixels, rounding to
+// the nearest integer and never going below one pixel.
+int ratio_to_pixels(double ratio, int input_size) {
+    long pixels = std::lround(ratio * static_cast<double>(input_size));
+    return static_cast<int>(std::max(1L, pixels));
+}
+
 void print_usage(const char* program_name) {
     std::cout << "Usage: " << program_name << " <input_image> [output_image] [options]\n"
               << "Options:\n"
-              << "  -w, --width <val>   Target width (defaults to input width)\n"
-              << "  -h, --height <val>  Target height (defaults to input height)\n"
+              << "  -w, --width <val>   Target width in pixels (defaults to input width)\n"
+              << "  -h, --height <val>  Target height in pixels (defaults to input height)\n"
+              << "  --width-ratio <r>   Target width as a fraction of the input width (r > 0;\n"
+              << "                      r < 1 reduces, r > 1 enlarges). Alternative to -w\n"
+              << "  --height-ratio <r>  Target height as a fraction of the input height. Alternative to -h\n"
               << "  -t, --threads <val> Number of threads for OpenMP (defaults to hardware concurrency)\n"
               << "  --forward           Use forward energy variant (Rubinstein 2008)\n"
-              << "  --no-luma           Disable perceptual luminance weights (use raw L2 RGB norm instead)\n"
+              << "  --energy <name>     Backward energy function (Avidan & Shamir 2007, section 3.2):\n"
+              << "                      gradient (default), hog (gradient / local HoG maximum, 11x11),\n"
+              << "                      entropy (gradient + local entropy, 9x9). Not used with --forward\n"
+              << "  --norm <name>       Norm of the gradient and of the colour differences: l2 (default)\n"
+              << "                      or l1 (the e1 of Avidan & Shamir 2007, section 3.2)\n"
+              << "  --no-luma           Disable perceptual luminance weights (use the RGB norm instead)\n"
+              << "  --height-first      When both dimensions change, process the height before the width\n"
               << "  -m, --mask <path>   Path to mask image for pixel protection/removal (Green/White to protect, Red/Black to remove)\n"
               << "  --parallel-dp       Enable parallel dynamic programming step (OpenMP)\n"
               << "  --help              Show this help message\n"
@@ -129,8 +160,13 @@ void print_usage(const char* program_name) {
               << "  --dump-energy <path>  Write the backward energy map as a colour-mapped PNG\n"
               << "  --dump-seams <path>   Write the input with the seams removed to reach -w overlaid\n"
               << "  --viz-colourmap <name> Colour map for --dump-energy: viridis (default), magma, grey\n"
+              << "  --viz-clip <p>        Clip the energy map at its p-th percentile before colour\n"
+              << "                        mapping (0 < p <= 100, default 99; 100 = plain min-max)\n"
               << "  --seam-colour <r,g,b>  Seam overlay colour (default 220,20,60, crimson)\n"
-              << "  --seam-on-grey        Draw seams over a greyscale copy of the input\n";
+              << "  --seam-order <name>   Colour each seam by its removal order with the given colour\n"
+              << "                        map (viridis, magma, grey) instead of --seam-colour\n"
+              << "  --seam-on-grey        Draw seams over a greyscale copy of the input, with its\n"
+              << "                        grey levels compressed into [80, 176]\n";
 }
 
 std::string get_default_output_path(const std::string& input_path) {
@@ -191,11 +227,16 @@ int main(int argc, char* argv[]) {
 
     int target_width = -1;
     int target_height = -1;
+    double width_ratio = -1.0;  // --width-ratio / --height-ratio (unset if <= 0)
+    double height_ratio = -1.0;
     int num_threads = std::thread::hardware_concurrency();
     if (num_threads <= 0) num_threads = 1;
 
     bool use_forward = false;
+    EnergyFunction energy_function = EnergyFunction::Gradient;
+    GradientNorm gradient_norm = GradientNorm::L2;
     bool use_luma = true;
+    bool height_first = false;
     bool use_parallel_dp = false;
     std::string mask_path = "";
 
@@ -203,6 +244,8 @@ int main(int argc, char* argv[]) {
     std::string dump_energy_path = "";
     std::string dump_seams_path = "";
     std::string viz_colourmap_name = "viridis";
+    double viz_clip_percentile = viz::kDefaultClipPercentile;
+    std::string seam_order_name = "";  // empty: single-colour seams (--seam-colour)
     uint8_t seam_colour[3] = {220, 20, 60}; // crimson by default
     bool seam_on_grey = false;
 
@@ -212,12 +255,47 @@ int main(int argc, char* argv[]) {
             target_width = std::stoi(args[++i]);
         } else if ((arg == "-h" || arg == "--height") && i + 1 < args.size()) {
             target_height = std::stoi(args[++i]);
+        } else if (arg == "--width-ratio" && i + 1 < args.size()) {
+            if (!parse_positive_double(args[++i], &width_ratio)) {
+                std::cerr << "Error: --width-ratio expects a positive number, got '" << args[i] << "'.\n";
+                return 1;
+            }
+        } else if (arg == "--height-ratio" && i + 1 < args.size()) {
+            if (!parse_positive_double(args[++i], &height_ratio)) {
+                std::cerr << "Error: --height-ratio expects a positive number, got '" << args[i] << "'.\n";
+                return 1;
+            }
         } else if ((arg == "-t" || arg == "--threads") && i + 1 < args.size()) {
             num_threads = std::stoi(args[++i]);
         } else if (arg == "--forward") {
             use_forward = true;
+        } else if (arg == "--energy" && i + 1 < args.size()) {
+            const std::string name = args[++i];
+            if (name == "gradient") {
+                energy_function = EnergyFunction::Gradient;
+            } else if (name == "hog") {
+                energy_function = EnergyFunction::HoG;
+            } else if (name == "entropy") {
+                energy_function = EnergyFunction::Entropy;
+            } else {
+                std::cerr << "Error: Unknown energy function '" << name
+                          << "', expected gradient, hog or entropy.\n";
+                return 1;
+            }
+        } else if (arg == "--norm" && i + 1 < args.size()) {
+            const std::string name = args[++i];
+            if (name == "l2" || name == "L2") {
+                gradient_norm = GradientNorm::L2;
+            } else if (name == "l1" || name == "L1") {
+                gradient_norm = GradientNorm::L1;
+            } else {
+                std::cerr << "Error: Unknown norm '" << name << "', expected l1 or l2.\n";
+                return 1;
+            }
         } else if (arg == "--no-luma") {
             use_luma = false;
+        } else if (arg == "--height-first") {
+            height_first = true;
         } else if ((arg == "-m" || arg == "--mask") && i + 1 < args.size()) {
             mask_path = args[++i];
         } else if (arg == "--parallel-dp") {
@@ -228,6 +306,13 @@ int main(int argc, char* argv[]) {
             dump_seams_path = args[++i];
         } else if (arg == "--viz-colourmap" && i + 1 < args.size()) {
             viz_colourmap_name = args[++i];
+        } else if (arg == "--viz-clip" && i + 1 < args.size()) {
+            if (!parse_positive_double(args[++i], &viz_clip_percentile) || viz_clip_percentile > 100.0) {
+                std::cerr << "Error: --viz-clip expects a percentile in (0, 100], got '" << args[i] << "'.\n";
+                return 1;
+            }
+        } else if (arg == "--seam-order" && i + 1 < args.size()) {
+            seam_order_name = args[++i];
         } else if (arg == "--seam-colour" && i + 1 < args.size()) {
             if (!parse_rgb_triple(args[++i], seam_colour)) {
                 std::cerr << "Warning: Could not parse --seam-colour '" << args[i]
@@ -255,6 +340,27 @@ int main(int argc, char* argv[]) {
     }
 
     std::cout << "Loaded image: " << input_path << " (" << width << "x" << height << ", " << channels << " channels)\n";
+
+    // The energy functions of --energy modulate the backward per-pixel energy;
+    // forward energy has no per-pixel energy map to modulate.
+    if (use_forward && energy_function != EnergyFunction::Gradient) {
+        std::cerr << "Error: --energy hog/entropy applies to backward energy only; "
+                  << "it cannot be combined with --forward.\n";
+        return 1;
+    }
+
+    // Relative targets (--width-ratio / --height-ratio) are resolved against the
+    // input size; they are an alternative to the absolute -w / -h, not a modifier.
+    if (width_ratio > 0.0 && target_width != -1) {
+        std::cerr << "Error: use either -w/--width or --width-ratio, not both.\n";
+        return 1;
+    }
+    if (height_ratio > 0.0 && target_height != -1) {
+        std::cerr << "Error: use either -h/--height or --height-ratio, not both.\n";
+        return 1;
+    }
+    if (width_ratio > 0.0) target_width = ratio_to_pixels(width_ratio, width);
+    if (height_ratio > 0.0) target_height = ratio_to_pixels(height_ratio, height);
 
     if (target_width == -1) target_width = width;
     if (target_height == -1) target_height = height;
@@ -301,11 +407,22 @@ int main(int argc, char* argv[]) {
 
         // Convert the mask image to per-pixel weights P(i,j) (Rubinstein et al. 2008,
         // Eq. (2); object protection/removal of Avidan & Shamir 2007, section 4.6).
-        // The 1e6 scale makes any marked weight dominate the image energy (a column's
-        // accumulated gradient energy is well below 1e6), so marked pixels act as a
-        // soft +/- infinity: positive weights repel seams (protect), negative ones
-        // attract them (remove first). Colour masks use the green-minus-red difference
-        // (green protects, red removes); greyscale masks threshold the intensity.
+        // The weights are (IPOL manuscript, section "Masking", Equations (12)-(13)):
+        //   colour mask    (R, G, B):  P = kMaskScale * (G - R)          in [-255, 255] * kMaskScale
+        //   greyscale mask (V):        P = kMaskScale * 2 * (V - 128)    in [-256, 254] * kMaskScale
+        // The map is continuous: only G == R (colour) or V == 128 (greyscale) is
+        // neutral. The scale kMaskScale = 1e6 makes even the smallest non-zero weight
+        // (one intensity level) exceed the energy of a whole seam, so any deviation
+        // from neutral acts as a strong constraint rather than a graded weight:
+        // positive weights repel seams (protect), negative ones attract them (remove
+        // first); larger magnitudes only rank marked pixels among themselves.
+        // (Per row, the default gradient energy is at most 255*sqrt(6) ~ 625 and the
+        // forward step cost at most 2*255*sqrt(3) ~ 883, so a whole seam stays below
+        // 1e6 for images of up to about 1100 rows. e_HoG is smaller than the gradient;
+        // e_Entropy adds up to 255*log2(81) ~ 1617 per row, so the bound drops to
+        // about 450 rows, beyond which marked regions still dominate but no longer
+        // strictly outweigh every unmarked seam.)
+        constexpr double kMaskScale = 1e6;
         mask_weights.resize(width * height);
         for (int y = 0; y < height; ++y) {
             for (int x = 0; x < width; ++x) {
@@ -315,13 +432,13 @@ int main(int argc, char* argv[]) {
                     // Colour mask: weight proportional to (green - red).
                     double r_val = m_data[idx];
                     double g_val = m_data[idx + 1];
-                    weight = (g_val - r_val) * 1e6;
+                    weight = (g_val - r_val) * kMaskScale;
                 } else {
                     // Greyscale mask: map intensity continuously relative to mid-grey (128).
                     // White (255) protects, black (0) removes, and mid-grey (128) is neutral.
                     // The scale matches the range of the colour mask difference [-255, 255].
                     double val = m_data[idx];
-                    weight = (val - 128.0) * 2.0 * 1e6;
+                    weight = (val - 128.0) * 2.0 * kMaskScale;
                 }
                 mask_weights[y * width + x] = weight;
             }
@@ -338,7 +455,10 @@ int main(int argc, char* argv[]) {
         carver.set_mask_weights(mask_weights);
     }
     carver.set_forward_energy(use_forward);
+    carver.set_energy_function(energy_function);
     carver.set_luminance_energy(use_luma);
+    carver.set_gradient_norm(gradient_norm);
+    carver.set_height_first(height_first);
     carver.set_parallel_dp(use_parallel_dp);
     carver.set_verbose(true);
 
@@ -354,7 +474,7 @@ int main(int argc, char* argv[]) {
                       << "', falling back to viridis.\n";
         }
         std::vector<double> energy = carver.backward_energy_map(num_threads);
-        Image energy_img = viz::render_scalar_field(energy, width, height, cmap);
+        Image energy_img = viz::render_scalar_field(energy, width, height, cmap, viz_clip_percentile);
         if (write_png_utf8(dump_energy_path, energy_img)) {
             std::cout << "Wrote energy map to: " << dump_energy_path << "\n";
         }
@@ -374,7 +494,18 @@ int main(int argc, char* argv[]) {
             if (h_count > 0) {
                 h_seams = carver.seams_to_remove_horizontal(h_count, num_threads);
             }
-            Image seams_img = viz::render_seam_overlay(input_image, v_seams, h_seams, seam_colour, seam_on_grey);
+            Image seams_img;
+            if (seam_order_name.empty()) {
+                seams_img = viz::render_seam_overlay(input_image, v_seams, h_seams, seam_colour, seam_on_grey);
+            } else {
+                bool ok = true;
+                viz::Colourmap order_cmap = viz::colourmap_from_string(seam_order_name, &ok);
+                if (!ok) {
+                    std::cerr << "Warning: Unknown colour map '" << seam_order_name
+                              << "' for --seam-order, falling back to viridis.\n";
+                }
+                seams_img = viz::render_seam_overlay_by_order(input_image, v_seams, h_seams, order_cmap, seam_on_grey);
+            }
             if (write_png_utf8(dump_seams_path, seams_img)) {
                 std::cout << "Wrote seam overlay (" << v_seams.size() << " vertical, "
                           << h_seams.size() << " horizontal seams) to: "

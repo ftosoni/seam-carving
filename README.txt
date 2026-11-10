@@ -7,8 +7,8 @@ IPOL article:
     Image Processing On Line (IPOL), http://www.ipol.im/
     (The final article URL and DOI will be assigned upon publication.)
 
-Version: 1.0.0
-Date:    2026-06-21
+Version: 1.1.0
+Date:    2026-11-10
 
 Author:  Francesco Tosoni
 Contact: Francesco.Tosoni@santannapisa.it
@@ -47,8 +47,10 @@ Directory layout:
         visualise.cpp     Rendering of the energy map (colour maps) and of the
                           seam overlays used for the figures.
 
-    tests/                Unit tests:
-        tests.cpp         Self-contained test driver (no external framework).
+    tests/                Tests, run by ctest:
+        tests.cpp         Unit tests (self-contained, no external framework).
+        cli_tests.cmake   Command-line tests: every option, energy function and
+                          error case of the program, on the images in images/.
 
     thirdparty/           Third-party, public-domain image I/O headers:
         stb_image.h       Image loading (public domain / MIT, by Sean Barrett).
@@ -65,27 +67,32 @@ Directory layout:
 All references below are to the sections, equations and algorithms of the
 accompanying IPOL article.
 
-    - Energy map (Section "Energy", the backward dual-gradient energy):
+    - Energy map (Section "Energy", Equations (3)-(5); line 2 of Algorithm 1):
           SeamCarving::compute_energy_map   in src/seam_carving.cpp
+      and the alternative energy functions e_HoG (Equation (6)) and
+      e_Entropy (Equation (7)):
+          SeamCarving::apply_hog, SeamCarving::add_entropy
 
     - Optimal seam by dynamic programming (Section "Optimal Seam by Dynamic
-      Programming") and the forward-energy criterion (Section "Forward Energy",
-      Eq. (2)), together with the mask term P(i,j):
+      Programming", Equation (9)) and the forward-energy criterion (Section
+      "Forward Energy", Equations (10)-(11)), together with the mask term
+      P(i,j); lines 3-5 of Algorithm 1:
           SeamCarving::find_vertical_seam    in src/seam_carving.cpp
 
-    - Algorithm 1 (Width reduction by seam removal):
+    - Algorithm 1 (Width reduction by seam removal), lines 1-7:
           SeamCarving::carve_width           in src/seam_carving.cpp
-      using find_vertical_seam and SeamCarving::remove_vertical_seam.
+      using find_vertical_seam and SeamCarving::remove_vertical_seam (line 6).
       Height reduction reuses the same routine on the transposed image:
           SeamCarving::carve_height / SeamCarving::transpose
 
-    - Algorithm 2 (Width enlargement by ordered seam insertion, one pass):
+    - Algorithm 2 (Width enlargement by ordered seam insertion, one pass),
+      lines 1-8, repeated in passes of at most 50% of the width:
           SeamCarving::insert_width          in src/seam_carving.cpp
       Height enlargement reuses it via transposition:
           SeamCarving::insert_height
 
-    - Masking (Section "Masking: Object Protection and Removal"): the mask image
-      is converted to per-pixel weights in
+    - Masking (Section "Masking: Object Protection and Removal", Equations
+      (12)-(13)): the mask image is converted to per-pixel weights in
           main()                              in src/main.cpp
       and applied as the term P(i,j) in find_vertical_seam.
 
@@ -111,10 +118,14 @@ Build steps (from the root of this archive):
     cmake --build build --config Release
 
 This produces the executable "seam_carving" (or "seam_carving.exe" on Windows)
-inside the "build" directory. The unit tests are built as "seam_carving_tests"
-and can be run with:
+inside the "build" directory. The unit tests are built as "seam_carving_tests";
+together with the command-line tests of tests/cli_tests.cmake they can be run
+with:
 
-    ctest --test-dir build
+    ctest --test-dir build -C Release
+
+The same tests run on Linux, Windows and macOS at every push to the GitHub
+repository (.github/workflows/ci.yml).
 
 
 --------------------------------------------------------------------------------
@@ -128,24 +139,77 @@ General invocation:
 If the output path is omitted, the result is named <input>_carved.<ext>.
 
 Main options:
-    -w, --width  <val>    Target width  (default: input width).
-    -h, --height <val>    Target height (default: input height).
+    -w, --width  <val>    Target width in pixels  (default: input width).
+    -h, --height <val>    Target height in pixels (default: input height).
+    --width-ratio  <r>    Target width as a fraction r > 0 of the input width
+                          (r < 1 reduces, r > 1 enlarges; rounded to the
+                          nearest pixel). Alternative to -w.
+    --height-ratio <r>    Same for the height. Alternative to -h.
     -t, --threads <val>   Number of OpenMP threads (default: hardware cores).
     --forward             Use forward energy (Rubinstein et al., 2008).
+    --energy <name>       Backward energy function (Avidan & Shamir 2007,
+                          Section 3.2): gradient (default, gradient magnitude),
+                          hog (gradient divided by the maximum of an 8-bin
+                          histogram of oriented gradients over an 11x11 window)
+                          or entropy (gradient plus the local entropy over a
+                          9x9 window). Backward energy only: it cannot be
+                          combined with --forward.
+    --norm <name>         Norm of the gradient (and of the RGB differences with
+                          --no-luma): l2 (default) or l1, the e1 of Avidan &
+                          Shamir (2007, Section 3.2).
     --no-luma             Compute energy on the raw RGB norm instead of the
                           BT.601 luminance.
+    --height-first        When both dimensions change, process the height
+                          (horizontal seams) before the width; by default the
+                          width is processed first.
     -m, --mask <path>     Weight mask for object protection/removal
-                          (green protects, red removes; see Section 6).
+                          (see "Weight masks" below and Section 6).
+    --parallel-dp         Experimental: parallelise the inner loop of the
+                          dynamic-programming recurrence with OpenMP. This is
+                          slower than the default serial scan (see Section 7)
+                          and is kept only to measure the trade-off; the result
+                          is identical.
     --help                Show the full help message.
 
 Visualisation options (written from the input, before carving):
     --dump-energy <path>  Save the backward energy map as a colour-mapped PNG.
-    --dump-seams  <path>  Save the input with the seams removed to reach -w
-                          overlaid.
+    --dump-seams  <path>  Save the input with the seams removed to reach the
+                          target width/height overlaid.
     --viz-colourmap <name> Colour map for --dump-energy: viridis (default),
                           magma, grey.
+    --viz-clip <p>        Clip the energy map at its p-th percentile before
+                          colour mapping (0 < p <= 100, default 99), so that a
+                          few very strong edges do not darken all intermediate
+                          values; 100 gives the plain min-max normalisation.
     --seam-colour <r,g,b> Seam overlay colour (default 220,20,60, crimson).
-    --seam-on-grey        Draw the seams over a greyscale copy of the input.
+    --seam-order <name>   Colour each seam by its removal order through the
+                          given colour map (viridis, magma, grey): the first
+                          seam removed takes the low end of the map, the last
+                          one the high end. Overrides --seam-colour.
+    --seam-on-grey        Draw the seams over a greyscale copy of the input,
+                          with its grey levels compressed into [80, 176] so
+                          that both dark and light seam colours stand out.
+
+Weight masks (-m):
+    The mask must have the same size as the input image. Each mask pixel is
+    turned into a weight P that is added to the cumulative seam cost:
+
+        colour mask (3 or 4 channels):  P = 10^6 * (G - R)
+        greyscale mask (1 or 2 ch.):    P = 10^6 * 2 * (V - 128)
+
+    where R, G are the red and green channels and V is the grey level (0-255).
+    P > 0 protects the pixel (seams avoid it), P < 0 marks it for removal
+    (seams are attracted to it), P = 0 leaves it unchanged. Only G = R (e.g.
+    black, white, any grey) or V = 128 is neutral. Because of the 10^6 factor,
+    even a one-level deviation from neutral outweighs the energy of a whole
+    seam, so any non-neutral pixel acts as a strong constraint rather than a
+    graded weight. To build a mask:
+        - colour:    paint pure green (0,255,0) to protect, pure red
+                     (255,0,0) to remove, and leave the rest black or grey;
+        - greyscale: paint white (255) to protect, black (0) to remove, and
+                     fill the rest with mid-grey exactly 128.
+    Beware of anti-aliased or JPEG-compressed masks: slightly off-neutral
+    pixels near the painted regions act as constraints too. Save masks as PNG.
 
 Examples:
 
@@ -164,7 +228,16 @@ Examples:
 
     (e) Reproduce the energy and seam figures of the first example:
         ./build/seam_carving images/portal_orig.jpg out.png -w 640 \
-            --dump-energy energy.png --dump-seams seams.png --seam-on-grey
+            --dump-energy energy.png --dump-seams seams.png \
+            --seam-order viridis --seam-on-grey
+
+    (f) Relative target size: reduce the width to 75% and enlarge the height
+        by 20%:
+        ./build/seam_carving images/portal_orig.jpg out.png \
+            --width-ratio 0.75 --height-ratio 1.2
+
+    The exact commands producing every figure of the article are listed in
+    images/README.md.
 
 
 --------------------------------------------------------------------------------

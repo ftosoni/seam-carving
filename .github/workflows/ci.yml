@@ -10,11 +10,12 @@ jobs:
   build-and-test:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Configure CMake
       run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON
@@ -22,6 +23,8 @@ jobs:
     - name: Build
       run: cmake --build build --config Release
 
+    # Unit tests (tests/tests.cpp) and command-line tests of every program
+    # option, energy function and error case (tests/cli_tests.cmake).
     - name: Run Tests
       working-directory: build
       run: ctest -C Release --output-on-failure

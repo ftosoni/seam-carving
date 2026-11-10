@@ -25,6 +25,12 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
+// The checks below use assert(); make sure they stay active in Release builds,
+// where CMake defines NDEBUG and would otherwise compile every assert away.
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
+
 #include "../src/seam_carving.h"
 #include "../src/visualise.h"
 #include <iostream>
@@ -449,9 +455,228 @@ void test_colourmaps() {
     std::cout << "test_colourmaps passed!" << std::endl;
 }
 
+// Percentile clipping of the energy rendering: a single outlier must not compress
+// the remaining values, and clip = 100 must reproduce the plain min-max mapping.
+void test_energy_clipping() {
+    // 100 values 0..99 plus one huge outlier.
+    std::vector<double> field;
+    for (int i = 0; i < 100; ++i) field.push_back(i);
+    field.push_back(1e6);
+    const int w = static_cast<int>(field.size());
+
+    // Grey map: the output intensity is the normalised value t * 255.
+    Image minmax = viz::render_scalar_field(field, w, 1, viz::Colourmap::Grey, 100.0);
+    Image clipped = viz::render_scalar_field(field, w, 1, viz::Colourmap::Grey, 99.0);
+
+    // Min-max: value 50 is crushed to black by the outlier, which is white.
+    assert(minmax.data[50 * 3] == 0);
+    assert(minmax.data[100 * 3] == 255);
+    // Clipped at the 99th percentile (value 99): value 50 lands mid-scale, and both
+    // 99 and the outlier saturate at white.
+    assert(std::abs(static_cast<int>(clipped.data[50 * 3]) - 129) <= 1);
+    assert(clipped.data[99 * 3] == 255);
+    assert(clipped.data[100 * 3] == 255);
+    assert(clipped.data[0] == 0);
+
+    std::cout << "test_energy_clipping passed!" << std::endl;
+}
+
+// Seams coloured by removal order: the first seam takes the low end of the colour
+// map, the last one the high end, and horizontal seams follow the vertical ones.
+void test_seam_overlay_by_order() {
+    Image bg;
+    bg.width = 4;
+    bg.height = 3;
+    bg.channels = 1;
+    bg.data.assign(4 * 3, 128);
+
+    std::vector<std::vector<int>> v = {{0, 0, 0}, {3, 3, 3}};  // columns 0 and 3
+    std::vector<std::vector<int>> h = {{1, 1, 1, 1}};          // row 1 (painted last)
+    Image out = viz::render_seam_overlay_by_order(bg, v, h, viz::Colourmap::Grey, false);
+    assert(out.channels == 3 && out.width == 4 && out.height == 3);
+
+    auto grey_at = [&](int x, int y) { return static_cast<int>(out.data[(y * 4 + x) * 3]); };
+    assert(grey_at(0, 0) == 0);    // seam 0 of 3: t = 0
+    assert(grey_at(3, 0) == 128);  // seam 1 of 3: t = 0.5
+    assert(grey_at(2, 1) == 255);  // seam 2 of 3 (horizontal): t = 1
+    assert(grey_at(0, 1) == 255);  // horizontal seam drawn over the vertical one
+    assert(grey_at(1, 2) == 128);  // untouched background
+
+    // A single seam must not divide by zero and takes the low end.
+    Image one = viz::render_seam_overlay_by_order(bg, {{1, 1, 1}}, {}, viz::Colourmap::Grey, false);
+    assert(one.data[(0 * 4 + 1) * 3] == 0);
+
+    std::cout << "test_seam_overlay_by_order passed!" << std::endl;
+}
+
+// Energy functions of Avidan & Shamir 2007, section 3.2 (--energy hog / entropy).
+void test_energy_functions() {
+    // 1. Constant image: zero gradient, zero entropy, so every energy is zero.
+    Image flat;
+    flat.width = 12;
+    flat.height = 12;
+    flat.channels = 1;
+    flat.data.assign(12 * 12, 77);
+    for (EnergyFunction f : {EnergyFunction::Gradient, EnergyFunction::HoG, EnergyFunction::Entropy}) {
+        SeamCarving c(flat);
+        c.set_energy_function(f);
+        for (double e : c.backward_energy_map(1)) assert(e == 0.0);
+    }
+
+    // 2. Entropy on a 9x9 image: with periodic boundaries every 9x9 window covers
+    //    the whole image, so H is the same at every pixel. 41 pixels at 0 and 40
+    //    at 255 give H = -(41/81) log2(41/81) - (40/81) log2(40/81), and
+    //    e_Entropy - e = 255 * H everywhere.
+    Image two;
+    two.width = 9;
+    two.height = 9;
+    two.channels = 1;
+    two.data.assign(81, 0);
+    for (int i = 0; i < 40; ++i) two.data[i * 2] = 255;  // 40 scattered bright pixels
+    SeamCarving grad_carver(two);
+    SeamCarving ent_carver(two);
+    ent_carver.set_energy_function(EnergyFunction::Entropy);
+    std::vector<double> e_grad = grad_carver.backward_energy_map(1);
+    std::vector<double> e_ent = ent_carver.backward_energy_map(1);
+    const double p0 = 41.0 / 81.0, p1 = 40.0 / 81.0;
+    const double h = -(p0 * std::log2(p0) + p1 * std::log2(p1));
+    for (size_t i = 0; i < e_grad.size(); ++i) {
+        assert(std::abs((e_ent[i] - e_grad[i]) - 255.0 * h) < 1e-9);
+    }
+
+    // 3. HoG on vertical stripes of period 4 (0, 0, 200, 200, ...) on a 24x24
+    //    image: every central-difference gradient is horizontal, of magnitude 200,
+    //    pointing alternately right and left. Both directions are the same
+    //    unsigned orientation, so they fall in a single bin and every 11x11 window
+    //    holds the same sum. e_HoG is then the gradient divided by a constant, and
+    //    never exceeds the gradient.
+    Image stripes;
+    stripes.width = 24;
+    stripes.height = 24;
+    stripes.channels = 1;
+    stripes.data.resize(24 * 24);
+    for (int y = 0; y < 24; ++y)
+        for (int x = 0; x < 24; ++x) stripes.data[y * 24 + x] = static_cast<uint8_t>((x % 4 < 2) ? 0 : 200);
+    SeamCarving hog_grad(stripes);
+    SeamCarving hog_carver(stripes);
+    hog_carver.set_energy_function(EnergyFunction::HoG);
+    std::vector<double> g = hog_grad.backward_energy_map(1);
+    std::vector<double> e_hog = hog_carver.backward_energy_map(1);
+    double ratio = -1.0;
+    for (size_t i = 0; i < g.size(); ++i) {
+        assert(e_hog[i] <= g[i] + 1e-12);
+        if (g[i] > 0.0) {
+            const double r = e_hog[i] / g[i];
+            if (ratio < 0.0) ratio = r;
+            assert(std::abs(r - ratio) < 1e-9 * ratio);  // same divisor everywhere
+        }
+    }
+    assert(std::abs(ratio - 1.0 / (121 * 200.0)) < 1e-12);  // 11x11 pixels of magnitude 200
+
+    // 4. Both functions drive a full resize, and the result does not depend on
+    //    the number of threads.
+    Image img = create_synthetic_image();
+    for (EnergyFunction f : {EnergyFunction::HoG, EnergyFunction::Entropy}) {
+        SeamCarving a(img), b(img);
+        a.set_energy_function(f);
+        b.set_energy_function(f);
+        a.resize(7, 12, 1);
+        b.resize(7, 12, 4);
+        Image ra = a.get_image(), rb = b.get_image();
+        assert(ra.width == 7 && ra.height == 12);
+        assert(ra.data == rb.data);
+    }
+
+    std::cout << "test_energy_functions passed!" << std::endl;
+}
+
+// Gradient norm (--norm): on the greyscale ramp I(x, y) = 10x + 3y (5x3, periodic
+// boundaries), pixel (x=2, y=1) has central differences dx = 20 and dy = 6, so the
+// energy is |20| + |6| = 26 with L1 and sqrt(20^2 + 6^2) with L2 (default). The L1
+// variant must also run with every criterion, in luminance and RGB mode.
+void test_gradient_norm() {
+    Image img;
+    img.width = 5;
+    img.height = 3;
+    img.channels = 1;
+    img.data.resize(15);
+    for (int y = 0; y < 3; ++y) {
+        for (int x = 0; x < 5; ++x) {
+            img.data[y * 5 + x] = static_cast<uint8_t>(10 * x + 3 * y);
+        }
+    }
+    {
+        SeamCarving carver(img);
+        std::vector<double> e = carver.backward_energy_map(1);
+        assert(std::abs(e[1 * 5 + 2] - std::sqrt(20.0 * 20.0 + 6.0 * 6.0)) < 1e-9);
+    }
+    {
+        SeamCarving carver(img);
+        carver.set_gradient_norm(GradientNorm::L1);
+        std::vector<double> e = carver.backward_energy_map(1);
+        assert(std::abs(e[1 * 5 + 2] - 26.0) < 1e-9);
+    }
+
+    for (bool forward : {false, true}) {
+        for (bool luma : {true, false}) {
+            SeamCarving carver(create_synthetic_image());
+            carver.set_gradient_norm(GradientNorm::L1);
+            carver.set_forward_energy(forward);
+            carver.set_luminance_energy(luma);
+            carver.resize(8, 12, 2);
+            Image result = carver.get_image();
+            assert(result.width == 8 && result.height == 12);
+        }
+    }
+    std::cout << "test_gradient_norm passed!" << std::endl;
+}
+
+// Order of the dimensions (--height-first): the output size is the same either
+// way, and when only one dimension changes the order has no effect at all.
+void test_height_first() {
+    SeamCarving a(create_synthetic_image());
+    a.set_height_first(true);
+    a.resize(8, 7, 2);
+    Image ra = a.get_image();
+    assert(ra.width == 8 && ra.height == 7);
+
+    SeamCarving b(create_synthetic_image());
+    SeamCarving c(create_synthetic_image());
+    c.set_height_first(true);
+    b.resize(7, 10, 2);
+    c.resize(7, 10, 2);
+    assert(b.get_image().data == c.get_image().data);
+    std::cout << "test_height_first passed!" << std::endl;
+}
+
+// --seam-on-grey: the background is greyscale with its levels compressed linearly
+// into [80, 176], so black maps to 80, white to 176, and no seam pixel is touched
+// when there are no seams.
+void test_seam_on_grey_background() {
+    Image bg;
+    bg.width = 2;
+    bg.height = 1;
+    bg.channels = 3;
+    bg.data = {0, 0, 0, 255, 255, 255};  // black, white
+    uint8_t seam_rgb[3] = {255, 0, 0};
+    Image out = viz::render_seam_overlay(bg, {}, {}, seam_rgb, true);
+    assert(out.channels == 3);
+    for (int c = 0; c < 3; ++c) {
+        assert(out.data[c] == 80);
+        assert(out.data[3 + c] == 176);
+    }
+    std::cout << "test_seam_on_grey_background passed!" << std::endl;
+}
+
 int main() {
     std::cout << "Running seam carving tests..." << std::endl;
+    test_seam_on_grey_background();
+    test_gradient_norm();
+    test_height_first();
+    test_energy_functions();
     test_colourmaps();
+    test_energy_clipping();
+    test_seam_overlay_by_order();
     test_horizontal_seam_visualisation();
     test_edge_cases();
     test_enlargement_beyond_50_percent();

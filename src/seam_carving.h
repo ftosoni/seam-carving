@@ -38,6 +38,25 @@ struct Image {
     std::vector<uint8_t> data;
 };
 
+// Backward energy functions of Avidan & Shamir 2007, section 3.2. All three start
+// from the gradient magnitude e (L2 or L1 norm of the central-difference gradient,
+// see GradientNorm and compute_energy_map); HoG and Entropy then modulate it with
+// a local statistic.
+enum class EnergyFunction {
+    Gradient,  // e: gradient magnitude (default)
+    HoG,       // e_HoG = e / max(HoG), HoG = 8-bin orientation histogram, 11x11 window
+    Entropy    // e_Entropy = e + local intensity entropy over a 9x9 window
+};
+
+// Norm of the image gradient in the energy (Avidan & Shamir 2007, section 3.2,
+// which defines e1 with the L1 norm and reports having tested L2 as well). The
+// same norm is used for the colour differences of the RGB mode (--no-luma),
+// including the forward-energy step costs.
+enum class GradientNorm {
+    L1,  // |dx| + |dy|, the e1 of the original paper
+    L2   // sqrt(dx^2 + dy^2), rotation invariant (default)
+};
+
 class SeamCarving {
 public:
     explicit SeamCarving(const Image& image);
@@ -61,6 +80,17 @@ public:
     // Compute gradients on the BT.601 luminance (default) or directly on RGB.
     void set_luminance_energy(bool enable);
 
+    // Select the backward energy function (default: Gradient). It only affects the
+    // backward criterion: forward energy derives its own step costs in the DP.
+    void set_energy_function(EnergyFunction function);
+
+    // Select the norm of the gradient and of the colour differences (default: L2).
+    void set_gradient_norm(GradientNorm norm);
+
+    // Order of the two dimensions when both change: by default the width is
+    // processed first (vertical seams), then the height; enable to reverse it.
+    void set_height_first(bool enable);
+
     // Enable or disable verbose progress logging to stdout
     void set_verbose(bool enable);
 
@@ -75,11 +105,11 @@ public:
     // duplicating any carving logic. They are the only additions made to the
     // class for visualisation purposes.
 
-    // Backward dual-gradient energy map of the current image (size width*height,
-    // row-major). This is always the backward criterion (Avidan & Shamir 2007,
-    // section 3.2), honouring the luminance setting: forward energy is defined on
-    // the edges that removal creates, not as a per-pixel map, so it has no direct
-    // visual analogue here.
+    // Backward energy map of the current image (size width*height, row-major), for
+    // the selected energy function (Avidan & Shamir 2007, section 3.2) and
+    // honouring the luminance setting. This is always a backward energy: forward
+    // energy is defined on the edges that removal creates, not as a per-pixel map,
+    // so it has no direct visual analogue here.
     std::vector<double> backward_energy_map(int num_threads);
 
     // The first `count` vertical seams that width reduction would remove, in
@@ -109,9 +139,14 @@ private:
     // Insert height (enlarges height using horizontal seams via transpose)
     void insert_height(int target_height, int num_threads);
 
-    // Backward energy map: dual-gradient magnitude e1 (Avidan & Shamir 2007, 3.2).
-    // Unused (and not built) in forward-energy mode, which derives its costs in the DP.
+    // Backward energy map of the selected energy function (Avidan & Shamir 2007,
+    // section 3.2). Unused in forward-energy mode, which derives its costs in the DP.
     std::vector<double> compute_energy_map(int num_threads);
+
+    // Turn the gradient magnitude `energy` into e_HoG (divide by the local HoG
+    // maximum) or e_Entropy (add the local entropy). See seam_carving.cpp.
+    void apply_hog(std::vector<double>& energy, int num_threads) const;
+    void add_entropy(std::vector<double>& energy, int num_threads) const;
 
     // Optimal vertical seam by dynamic programming. Uses the precomputed backward
     // energy map, or the forward-energy step costs (Rubinstein et al. 2008, Eq. (2))
@@ -131,6 +166,9 @@ private:
     
     bool use_forward_energy_ = false;
     bool use_luminance_ = true;
+    EnergyFunction energy_function_ = EnergyFunction::Gradient;
+    GradientNorm gradient_norm_ = GradientNorm::L2;
+    bool height_first_ = false;
     bool verbose_ = false;
     bool use_parallel_dp_ = false;
     std::vector<double> mask_weights_; // Vector of size width_ * height_
